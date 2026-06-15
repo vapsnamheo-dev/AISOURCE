@@ -1,0 +1,85 @@
+### Flask를 사용한 간단한 BMI 계산 웹 애플리케이션 분석(역공학, 리버스 엔지니어링)  ###
+
+1단계: 프로젝트 전체 구조 파악
+/
+├── app.py              # 메인 서버 애플리케이션 (Python)
+├── bmi.py              # BMI 계산 비즈니스 로직 (Python)
+├── db.py               # 데이터베이스 연결 및 쿼리 로직 (Python)
+│
+├── static/
+│   └── style.css       # 웹 페이지 디자인 (CSS)
+│
+└── templates/
+    ├── index.html      # BMI 계산 입력 페이지 (HTML + Jinja2)
+    ├── result.html     # 계산 결과 출력 페이지 (HTML + Jinja2)
+    └── history.html    # BMI 기록 목록 페이지 (HTML + Jinja2)
+
+이 구조를 보면 app.py가 중앙 허브 역할을 하며, bmi.py와 db.py로부터 기능을 가져오고, templates와 static 폴더의 파일을 통해 사용자에게 시각적인 결과를 보여준다는 것을 알 수 있습니다.
+
+2단계: 역공학 분석 단계별 접근
+index.html을 포함해 각 파일이 어떤 역할을 하는지 더욱 세밀하게 분석할 수 있습니다.
+
+1. 프론트엔드 분석: 사용자 경험의 시작점 (index.html)
+URL 라우트 파악: form 태그의 action="/calculate"와 method="post" 속성을 통해, 사용자가 '계산하기' 버튼을 누르면 /calculate URL로 POST 요청을 보낸다는 것을 알 수 있습니다.
+
+사용자 입력: input 태그의 name="weight"와 name="height"를 통해, 사용자가 입력한 데이터가 각각 weight와 height라는 이름으로 서버에 전달된다는 것을 파악합니다.
+
+동적 UI: {% if error %} Jinja2 템플릿 구문을 통해, 서버에서 error 변수를 전달받으면 오류 메시지를 화면에 표시하는 기능이 있음을 알 수 있습니다.
+
+내비게이션: <a href="/">와 <a href="/history"> 링크를 통해, 이 페이지에서 메인 페이지와 이력 보기 페이지로 이동할 수 있다는 것을 파악합니다.
+
+2. 서버 로직 분석: 데이터 처리의 핵심 (app.py, bmi.py, db.py)
+요청 처리 (app.py):
+
+/calculate 라우트를 담당하는 calculate() 함수는 index.html에서 보낸 POST 요청을 받습니다.
+
+request.form['weight']와 request.form['height']를 통해 index.html에서 넘어온 사용자 입력값을 가져옵니다.
+
+try-except 블록은 입력값이 숫자가 아닐 경우를 대비한 예외 처리 로직입니다.
+
+비즈니스 로직 실행 (app.py -> bmi.py):
+
+calculate() 함수는 BMICalculator(weight, height) 객체를 생성하고 get_result() 메소드를 호출하여 BMI 계산을 수행합니다. 이는 bmi.py 파일의 기능입니다.
+
+데이터베이스 저장 (app.py -> db.py):
+
+계산된 BMI 결과(result)를 db.save_bmi_record() 함수에 전달하여 데이터베이스에 저장합니다. 이는 db.py 파일의 기능입니다.
+
+응답 생성: 모든 처리가 완료되면 render_template('result.html', ...)를 호출하여 result.html에 BMI 정보와 함께 결과를 보여주는 페이지를 반환합니다.
+
+3. 결과 및 이력 표시: 사용자에게 피드백 제공 (result.html, history.html)
+결과 페이지 (result.html):
+
+{{ bmi }}, {{ category }}와 같은 변수들을 통해 app.py에서 전달받은 계산 결과를 화면에 표시합니다.
+
+BMI 범주 안내를 하드코딩된 리스트로 보여주며, 이는 bmi.py의 get_bmi_category() 함수 로직과 일치합니다.
+
+이력 페이지 (history.html):
+
+{% for record in records %} 반복문을 통해 app.py의 history() 함수에서 전달받은 records 리스트를 테이블 형태로 출력합니다.
+
+{{ record.created_at.strftime(...) }} 코드를 통해 DB에 저장된 날짜/시간 객체를 보기 좋게 문자열로 변환하는 것을 알 수 있습니다.
+
+이처럼 index.html에서 시작된 사용자의 입력이 app.py의 요청 처리를 거쳐 bmi.py와 db.py의 비즈니스 로직을 실행하고, 최종적으로 result.html 또는 history.html을 통해 사용자에게 결과를 보여주는 데이터 흐름을 파악할 수 있습니다.
+
+
+### 사전 파이썬 학습 내용 ###
+1단계: Python 기초 문법 및 개념
+ - 변수와 자료형: weight, height 같은 변수에 숫자(float)를 할당하고 사용하는 법. 딕셔너리(result)와 리스트(records) 자료형의 사용법
+ -  함수: index(), calculate()와 같이 특정 기능을 수행하는 함수를 정의하고 호출하는 방법. 함수에 인자를 전달하고 반환값을 받는 방법.
+ - 클래스: BMICalculator, Database처럼 객체 지향 프로그래밍의 기본인 클래스를 정의하고 사용하는 법. 
+ - 특히 __init__ 메소드가 클래스 객체를 초기화하는 역할을 한다는 것을 이해
+ - 예외 처리: try, except 구문을 이용해 ValueError와 같은 예상치 못한 오류를 처리하는 방법 등(ex. calculate() 함수에서 사용자가 숫자가  아닌 값을 입력했을 때 발생하는 문제를 어떻게 해결하는지 분석)
+ - 조건문과 반복문: if, elif, else를 이용한 조건문(get_bmi_category() 함수)과 for 반복문(history.html의 {% for ... %})을 이해해야 합니다.
+
+2단계: 웹 개발 관련 라이브러리 및 개념
+ - Flask 웹 프레임워크: 웹 애플리케이션의 기본 뼈대를 만드는 Flask의 핵심 개념
+ - 설치: pip install flask 명령어로 라이브러리를 설치하는 방법 파악
+ - 라우팅: @app.route('/') 데코레이터가 URL과 파이썬 함수를 어떻게 연결하는지 이해
+ - 템플릿 렌더링: render_template() 함수가 HTML 파일(templates 폴더)을 불러와 사용자에게 보여주는 역할을 한다는 것을 파악
+ - 요청 처리: request 객체를 사용하여 사용자가 웹 폼에 입력한 데이터를 어떻게 가져오는지 파악. (ex request.form이 POST 방식으로 전달된 폼 데이터를 처리하는 데 사용)
+ - Jinja2 템플릿 엔진: HTML 파일 안에 파이썬 코드를 삽입하는 방법 파악. (ex. 변수: {{ bmi }}처럼 파이썬에서 전달된 변수 값을 표시하는 방법 파악)
+ - 제어 구조: {% if records %}와 {% for record in records %}처럼 조건문과 반복문을 사용하는 방법을 이해
+ - 데이터베이스 연동: pip install pymysql 명령어로 데이터베이스 라이브러리를 설치합니다
+ - DB 연결: pymysql.connect() 함수가 데이터베이스 서버에 연결하는 데 사용되는 것을 이해. 
+
