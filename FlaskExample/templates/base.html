@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}BMI 계산기{% endblock %}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>{% block heading %}BMI 계산기{% endblock %}</h1>
+
+        <nav class="nav-menu">
+            <a href="/" {% if request.path == '/' %}class="active"{% endif %}>계산하기</a>
+            <a href="/history" {% if request.path == '/history' %}class="active"{% endif %}>이력 보기</a>
+        </nav>
+
+        {% block content %}{% endblock %}
+    </div>
+</body>
+</html>
