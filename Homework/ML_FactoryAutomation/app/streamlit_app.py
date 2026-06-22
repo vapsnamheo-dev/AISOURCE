@@ -146,11 +146,17 @@ with st.sidebar:
     st.divider()
     st.subheader("⚙️ 판정 임계값")
 
-    # 세션 첫 로드 시에만 DB에서 기본값 읽기
+    # 세션 첫 로드 시에만 기본값 결정
+    # 사용자가 '저장' 버튼으로 명시적으로 저장한 이력이 있을 때만 DB값 사용.
+    # 이력 없음(초기 모델 save_model_to_db threshold=0.5) → 0.85 사용.
     if "thr_db_loaded" not in st.session_state:
         try:
-            _db_thr = model_store.load_threshold_from_db()
-            st.session_state["thr_default"] = _db_thr if _db_thr is not None else 0.85
+            _hist = model_store.load_threshold_history(limit=1)
+            if _hist:
+                _db_thr = model_store.load_threshold_from_db()
+                st.session_state["thr_default"] = _db_thr if _db_thr is not None else 0.85
+            else:
+                st.session_state["thr_default"] = 0.85
         except Exception:
             st.session_state["thr_default"] = 0.85
         st.session_state["thr_db_loaded"] = True
