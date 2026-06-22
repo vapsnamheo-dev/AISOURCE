@@ -1,0 +1,53 @@
+# 1. 데이터 로드
+df = pd.read_csv("dataset/tips.csv")
+# 2. EDA - 수치형 히트맵
+plt.figure(figsize=(6,4))
+corr = df[['total_bill', 'tip', 'size']].corr()
+sns.heatmap(corr, annot=True, cmap='coolwarm')
+plt.title("Numeric Correlation Heatmap")
+plt.show()
+# 3. 라벨 인코딩
+categorical_cols = ['sex', 'smoker', 'day', 'time']
+encoders = {}
+
+for col in categorical_cols:
+    le = LabelEncoder()
+    df[col] = le.fit_transform(df[col])
+    encoders[col] = le
+# 4. Feature / Target 분리
+X = df.drop('tip', axis=1)
+y = df['tip']
+# 5. 데이터 분할
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+# 6. 모델 학습
+model = RandomForestRegressor(n_estimators=100, random_state=42)
+model.fit(X_train, y_train)
+# 7. 예측
+y_pred = model.predict(X_test)
+# 8. 성능 평가
+r2 = r2_score(y_test, y_pred)
+rmse = np.sqrt(mean_squared_error(y_test, y_pred))
+
+print(f"\nR2 Score: {r2:.4f}")
+print(f"RMSE: {rmse:.4f}")
+# 9. Feature Importance
+importances = pd.Series(model.feature_importances_, index=X.columns)
+
+plt.figure(figsize=(8,4))
+importances.sort_values().plot(kind='barh')
+plt.title("Feature Importance")
+plt.show()
+# 10. Permutation Importance
+perm = permutation_importance(model, X_test, y_test, n_repeats=10, random_state=42)
+
+perm_importance = pd.Series(perm.importances_mean, index=X.columns)
+
+plt.figure(figsize=(8,4))
+perm_importance.sort_values().plot(kind='barh')
+plt.title("Permutation Importance")
+plt.show()
+# 11. 모델 저장
+joblib.dump(model, "model/tips_model01.pkl")
+joblib.dump(encoders, "model/tips_labelencoders01.pkl")
+
+print("\n모델 저장 완료!")

@@ -1,0 +1,8 @@
+streamlit
+pandas
+numpy
+scikit-learn
+xgboost
+joblib
+sqlalchemy
+# tensorflow-cpu  # 딥러닝 Streamlit 배포 시에만 사용 — 본 머신러닝 프로젝트에서는 제외

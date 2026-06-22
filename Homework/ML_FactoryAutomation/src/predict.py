@@ -35,21 +35,41 @@ def load_artifacts(which: str = "xgb"):
 
 
 def make_feature_row(inp: dict, cols: list[str]) -> pd.DataFrame:
-    """입력 dict -> 학습 피처 순서에 맞는 1행 DataFrame."""
+    """입력 dict -> 학습 피처 순서에 맞는 1행 DataFrame.
+
+    Type은 저장된 OneHotEncoder(handle_unknown='ignore')로 인코딩하므로,
+    학습에 없던 등급이 들어와도 모든 Type_* 가 0이 되어 에러 없이 처리된다.
+    인코더가 없으면 수동 매핑으로 폴백한다.
+    """
+    from src import preprocess
+    import math
     row = {c: 0 for c in cols}
+    _torque = inp["torque"]; _speed = inp["rotational_speed"]
     mapping = {
         "Air temperature [K]": inp["air_temperature"],
         "Process temperature [K]": inp["process_temperature"],
-        "Rotational speed [rpm]": inp["rotational_speed"],
-        "Torque [Nm]": inp["torque"],
+        "Rotational speed [rpm]": _speed,
+        "Torque [Nm]": _torque,
         "Tool wear [min]": inp["tool_wear"],
+        # 물리 기반 파생 feature (build_features.engineer 와 동일 공식)
+        "Power [W]": _torque * _speed * (2 * math.pi / 60),
+        "Overstrain [minNm]": inp["tool_wear"] * _torque,
+        "Temp diff [K]": inp["process_temperature"] - inp["air_temperature"],
     }
     for k, v in mapping.items():
         if k in row:
             row[k] = v
-    type_col = f"Type_{inp.get('type', 'M')}"
-    if type_col in row:
-        row[type_col] = 1
+    t = inp.get("type", "M")
+    enc = preprocess.load_encoder()
+    if enc is not None:
+        ohe = enc.transform(pd.DataFrame({"Type": [t]}))[0]
+        for name, val in zip(enc.get_feature_names_out(["Type"]), ohe):
+            if name in row:
+                row[name] = int(val)
+    else:
+        type_col = f"Type_{t}"
+        if type_col in row:
+            row[type_col] = 1
     return pd.DataFrame([row])[cols]
 
 

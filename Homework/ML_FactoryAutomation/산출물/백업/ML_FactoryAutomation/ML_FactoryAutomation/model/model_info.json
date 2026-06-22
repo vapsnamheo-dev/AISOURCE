@@ -1,0 +1,179 @@
+{
+  "created_at": "2026-06-19T06:54:32",
+  "dataset": "AI4I 2020 Predictive Maintenance (10,000 rows, 8:2 train/test)",
+  "target": {
+    "0": "정상(normal)",
+    "1": "고장(failure)"
+  },
+  "n_features": 8,
+  "features": [
+    "Air temperature [K]",
+    "Process temperature [K]",
+    "Rotational speed [rpm]",
+    "Torque [Nm]",
+    "Tool wear [min]",
+    "Type_H",
+    "Type_L",
+    "Type_M"
+  ],
+  "scaler": {
+    "type": "StandardScaler",
+    "mean": {
+      "Air temperature [K]": 300.0054,
+      "Process temperature [K]": 310.0061,
+      "Rotational speed [rpm]": 1539.3569,
+      "Torque [Nm]": 40.0034,
+      "Tool wear [min]": 107.685,
+      "Type_H": 0.0986,
+      "Type_L": 0.6038,
+      "Type_M": 0.2976
+    },
+    "scale": {
+      "Air temperature [K]": 1.9967,
+      "Process temperature [K]": 1.4793,
+      "Rotational speed [rpm]": 180.9716,
+      "Torque [Nm]": 10.0189,
+      "Tool wear [min]": 63.608,
+      "Type_H": 0.2982,
+      "Type_L": 0.4891,
+      "Type_M": 0.4572
+    }
+  },
+  "models": {
+    "XGBoost": {
+      "file": "xgb_model.pkl",
+      "algorithm": "XGBClassifier",
+      "hyperparameters": {
+        "objective": "binary:logistic",
+        "base_score": null,
+        "booster": null,
+        "callbacks": null,
+        "colsample_bylevel": null,
+        "colsample_bynode": null,
+        "colsample_bytree": 0.9,
+        "device": null,
+        "early_stopping_rounds": null,
+        "enable_categorical": true,
+        "eval_metric": "logloss",
+        "feature_types": null,
+        "feature_weights": null,
+        "gamma": null,
+        "grow_policy": null,
+        "importance_type": null,
+        "interaction_constraints": null,
+        "learning_rate": 0.1,
+        "max_bin": null,
+        "max_cat_threshold": null,
+        "max_cat_to_onehot": null,
+        "max_delta_step": null,
+        "max_depth": 4,
+        "max_leaves": null,
+        "min_child_weight": null,
+        "missing": NaN,
+        "monotone_constraints": null,
+        "multi_strategy": null,
+        "n_estimators": 300,
+        "n_jobs": 2,
+        "num_parallel_tree": null,
+        "random_state": 42,
+        "reg_alpha": null,
+        "reg_lambda": null,
+        "sampling_method": null,
+        "scale_pos_weight": 28.52029520295203,
+        "subsample": 0.9,
+        "tree_method": null,
+        "validate_parameters": null,
+        "verbosity": null
+      },
+      "metrics": {
+        "accuracy": 0.979,
+        "precision": 0.6548,
+        "recall": 0.8088,
+        "f1": 0.7237,
+        "roc_auc": 0.9706
+      }
+    },
+    "RandomForest": {
+      "file": "rf_model.pkl",
+      "algorithm": "RandomForestClassifier",
+      "hyperparameters": {
+        "bootstrap": true,
+        "ccp_alpha": 0.0,
+        "class_weight": "balanced_subsample",
+        "criterion": "gini",
+        "max_depth": null,
+        "max_features": "sqrt",
+        "max_leaf_nodes": null,
+        "max_samples": null,
+        "min_impurity_decrease": 0.0,
+        "min_samples_leaf": 2,
+        "min_samples_split": 2,
+        "min_weight_fraction_leaf": 0.0,
+        "monotonic_cst": null,
+        "n_estimators": 300,
+        "n_jobs": 2,
+        "oob_score": false,
+        "random_state": 42,
+        "verbose": 0,
+        "warm_start": false
+      },
+      "metrics": {
+        "accuracy": 0.983,
+        "precision": 0.8269,
+        "recall": 0.6324,
+        "f1": 0.7167,
+        "roc_auc": 0.9611
+      }
+    },
+    "LogisticRegression": {
+      "file": "logreg_model.pkl",
+      "algorithm": "LogisticRegression",
+      "hyperparameters": {
+        "C": 1.0,
+        "class_weight": "balanced",
+        "dual": false,
+        "fit_intercept": true,
+        "intercept_scaling": 1,
+        "l1_ratio": 0.0,
+        "max_iter": 1000,
+        "n_jobs": null,
+        "penalty": "deprecated",
+        "random_state": 42,
+        "solver": "lbfgs",
+        "tol": 0.0001,
+        "verbose": 0,
+        "warm_start": false
+      },
+      "metrics": {
+        "accuracy": 0.825,
+        "precision": 0.1421,
+        "recall": 0.8235,
+        "f1": 0.2424,
+        "roc_auc": 0.9069
+      },
+      "weights_standardized": {
+        "Air temperature [K]": 1.7826,
+        "Process temperature [K]": -1.2324,
+        "Rotational speed [rpm]": 1.7311,
+        "Torque [Nm]": 2.406,
+        "Tool wear [min]": 0.8613,
+        "Type_H": -0.0628,
+        "Type_L": 0.1263,
+        "Type_M": -0.0941
+      },
+      "intercept_standardized": -1.477,
+      "weights_original_space": {
+        "Air temperature [K]": 0.892749,
+        "Process temperature [K]": -0.833093,
+        "Rotational speed [rpm]": 0.009566,
+        "Torque [Nm]": 0.240148,
+        "Tool wear [min]": 0.01354,
+        "Type_H": -0.210783,
+        "Type_L": 0.258214,
+        "Type_M": -0.20587
+      },
+      "intercept_original_space": -36.9063,
+      "note": "모델은 StandardScaler 표준화 입력을 사용. weights_standardized가 실제 학습 가중치이며, weights_original_space는 원본 단위 환산값."
+    }
+  }
+}

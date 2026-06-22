@@ -1,0 +1,71 @@
+0. 회귀모델 과제 하기: 
+워드파일 변경 후 한글 파일로 변경후 hwp 템플릿에 폰트 등 맞추어 옮기기. 
+git hub에 레포, 시연용 csv, 데이타 1, 5,6 올리고, streamlit로 gui와 csv import로 동작확인. 안되면 로컬에서 시연. 
+hwp발표연습
+
+1. 동일 feature 대형 데이터셋 확인 (주의: 아래 데이타는 raw 데이타 아닌 딥러닝이 만든 데이타라 쓰지 못함)
+AI4I와 완전히 같은 feature를 가진 약 13만 행 데이터는 Kaggle Playground S3E17 "Binary Classification of Machine Failures" 입니다(AI4I 2020에서 생성). 다만 이 데이터는 Kaggle 로그인이 필요해 샌드박스에서 직접 받지 못했습니다. 다운로드: kaggle.com/competitions/playground-series-s3e17/data → train.csv
+받으신 뒤 data/ 에 넣으면 제가 만든 src/bigdata.py의 load_external()이 컬럼(Machine failure→Target 등)을 자동 정규화해 동일 파이프라인으로 바로 돌아갑니다.
+
+2. 실행순서 2
+Git Bash 터미널에서 아래 명령어를 복사해서 실행하세요.
+
+가상환경 활성화 (이미 되어 있으면 스킵)
+
+
+source /c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/activate
+패키지 설치 (최초 1회)
+
+
+/c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/pip install -r /c/AISOURCE/Homework/ML_FactoryAutomation/requirements.txt
+핵심 파이프라인
+
+
+python -m src.train
+python -m src.evaluate
+python -m src.eda
+성능 개선 실험
+
+
+python -m src.improve
+python -m src.diagnose
+python -m src.bigdata
+python -m src.lasso
+데이터셋 비교
+
+
+python -m src.compare_datasets
+DB 저장 + 예측
+
+
+python -m src.db
+python -m src.model_store
+Streamlit 웹앱
+
+
+streamlit run /c/AISOURCE/Homework/ML_FactoryAutomation/app/streamlit_app.py
+테스트 & 린트
+
+
+ruff check /c/AISOURCE/Homework/ML_FactoryAutomation
+pytest -v
+주의: 반드시 ML_FactoryAutomation 폴더에서 실행해야 합니다. 현재 위치 확인은 pwd 명령어로 확인하세요.
+
+2. 실행 순서 1
+
+진입점과 데이터(predictive_maintenance.csv, train_s3e17.csv) 모두 정상입니다. 
+VS Code 터미널을 Git Bash로 열고(터미널 우측 + 옆 ▼ → Git Bash), 아래 순서로 실행하시면 됩니다.
+# 1) .venv 활성화 확인 (프롬프트 앞에 (.venv) 표시 확인)
+source /c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/activate
+
+# 2) .venv의 pip로 requirements.txt 전체 설치
+/c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/pip install -r /c/AISOURCE/Homework/ML_FactoryAutomation/requirements.txt
+
+# 3) 설치 확인
+/c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/pip list | grep -E "pytest|streamlit|sqlalchemy|ruff"
+
+# 4) 설치 완료 후 테스트 실행
+cd /c/AISOURCE/Homework/ML_FactoryAutomation
+/c/AISOURCE/Homework/ML_FactoryAutomation/.venv/Scripts/pytest -v
+
+실행 중 오류 메시지가 나오면 그 내용을 그대로 붙여주시면 바로 잡아드리겠습니다.

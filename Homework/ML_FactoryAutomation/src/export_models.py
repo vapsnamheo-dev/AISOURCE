@@ -50,6 +50,11 @@ def main() -> None:
         pickle.dump(scaler, f)
     with open(OUT / "feature_columns.pkl", "wb") as f:
         pickle.dump(cols, f)
+    # OneHotEncoder(handle_unknown='ignore') 도 함께 공유(재현용)
+    enc_path = config.MODEL_PATHS.get("encoder")
+    if enc_path and enc_path.exists():
+        with open(OUT / "encoder.pkl", "wb") as f:
+            pickle.dump(joblib.load(enc_path), f)
 
     info = {
         "created_at": datetime.datetime.now().isoformat(timespec="seconds"),

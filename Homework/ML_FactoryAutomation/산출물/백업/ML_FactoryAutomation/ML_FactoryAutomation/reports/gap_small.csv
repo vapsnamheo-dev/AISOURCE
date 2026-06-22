@@ -1,0 +1,4 @@
+,Train AUC,Test AUC,Gap,Test F1
+LogReg,0.9012,0.9069,-0.0058,0.2424
+RandomForest,1.0,0.9611,0.0389,0.7167
+XGBoost,1.0,0.9706,0.0294,0.7237

@@ -15,7 +15,7 @@ from src import config, data_loader
 
 def run():
     df = data_loader.load_data()
-    num = config.NUMERIC_FEATURES + [config.TARGET]
+    num = config.NUMERIC_FEATURES  # heatmap은 수치형만 (범주형·Target 제외)
 
     # 분포
     df[config.NUMERIC_FEATURES].hist(figsize=(11, 6), bins=30)

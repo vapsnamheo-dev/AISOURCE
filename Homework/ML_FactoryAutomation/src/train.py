@@ -36,7 +36,8 @@ def build_models(y_train):
 
 def train(save: bool = True):
     df = data_loader.load_data()
-    X, y = preprocess.build_features(df)
+    enc = preprocess.fit_encoder(df)          # OneHotEncoder(handle_unknown='ignore') 적합·저장
+    X, y = preprocess.build_features(df, encoder=enc)
     X_train, X_test, y_train, y_test, scaler, cols = preprocess.split_and_scale(X, y)
     logreg, rf, xgb = build_models(y_train)
     logreg.fit(X_train, y_train)
@@ -48,6 +49,7 @@ def train(save: bool = True):
         joblib.dump(xgb, config.MODEL_PATHS["xgb"])
         joblib.dump(scaler, config.MODEL_PATHS["scaler"])
         joblib.dump(cols, config.MODEL_PATHS["columns"])
+        joblib.dump(enc, config.MODEL_PATHS["encoder"])
     return {
         "logreg": logreg, "rf": rf, "xgb": xgb, "scaler": scaler, "columns": cols,
         "splits": (X_train, X_test, y_train, y_test),

@@ -31,6 +31,10 @@ NUMERIC_FEATURES = [
 ]
 CATEGORICAL_FEATURES = ["Type"]
 
+# 물리 기반 파생 feature (feature engineering) — 고장 규칙과 대응
+#   Power[W]=토크×회전(PWF), Overstrain=마모×토크(OSF), Temp diff=공정−공기온도(HDF)
+ENGINEERED_FEATURES = ["Power [W]", "Overstrain [minNm]", "Temp diff [K]"]
+
 DATABASE_URL = os.getenv("DATABASE_URL", f"sqlite:///{BASE_DIR / 'pdm.db'}")
 
 MODEL_PATHS = {
@@ -39,6 +43,7 @@ MODEL_PATHS = {
     "xgb": MODELS_DIR / "model_xgb.joblib",
     "scaler": MODELS_DIR / "scaler.joblib",
     "columns": MODELS_DIR / "feature_columns.joblib",
+    "encoder": MODELS_DIR / "encoder.joblib",  # OneHotEncoder(handle_unknown='ignore')
 }
 
 FAILURE_TYPES = {

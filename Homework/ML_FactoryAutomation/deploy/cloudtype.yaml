@@ -1,0 +1,9 @@
+# Cloudtype 배포 설정 (참고). 실제 배포는 Cloudtype 콘솔에서 GitHub 저장소 연결로 수행.
+name: ml-factory-automation
+app: streamlit
+options:
+  ports: 8501
+  start: streamlit run app/streamlit_app.py --server.port=8501 --server.address=0.0.0.0 --server.headless=true
+  env:
+    - name: DATABASE_URL
+      value: ${DATABASE_URL}   # Cloudtype의 PostgreSQL 애드온 연결 문자열 주입

@@ -1,9 +1,9 @@
 # 모델 카드 (Model Card) — 설비 고장 예측
 
-- 생성: 2026-06-19T07:41:03
+- 생성: 2026-06-22T02:04:18
 - 데이터: AI4I 2020 Predictive Maintenance (10,000 rows, 8:2 train/test)
 - 타깃: 0=정상(normal), 1=고장(failure)
-- Feature(8개): Air temperature [K], Process temperature [K], Rotational speed [rpm], Torque [Nm], Tool wear [min], Type_H, Type_L, Type_M
+- Feature(11개): Air temperature [K], Process temperature [K], Rotational speed [rpm], Torque [Nm], Tool wear [min], Power [W], Overstrain [minNm], Temp diff [K], Type_H, Type_L, Type_M
 - 스케일러: StandardScaler
 
 ## 모델별 하이퍼파라미터·지표
@@ -19,13 +19,16 @@
 ### LogisticRegression (LogisticRegression) — `logreg_model.pkl`
 - 지표: accuracy 0.825, precision 0.1421, recall 0.8235, f1 0.2424, roc_auc 0.9069
 - 주요 하이퍼파라미터: C=1.0, class_weight=balanced, dual=False, fit_intercept=True, intercept_scaling=1, l1_ratio=0.0, max_iter=1000, penalty=deprecated, random_state=42, solver=lbfgs, tol=0.0001, verbose=0
-- 절편(표준화): -1.477
+- 절편(표준화): -1.8981
 - 가중치(표준화 공간):
-    - Air temperature [K]: 1.7826
-    - Process temperature [K]: -1.2324
-    - Rotational speed [rpm]: 1.7311
-    - Torque [Nm]: 2.406
-    - Tool wear [min]: 0.8613
-    - Type_H: -0.0628
-    - Type_L: 0.1263
-    - Type_M: -0.0941
+    - Air temperature [K]: 0.2577
+    - Process temperature [K]: -0.0922
+    - Rotational speed [rpm]: 2.4726
+    - Torque [Nm]: 7.8935
+    - Tool wear [min]: 2.3403
+    - Power [W]: -4.2176
+    - Overstrain [minNm]: -1.2883
+    - Temp diff [K]: -0.6511
+    - Type_H: -0.0422
+    - Type_L: 0.1115
+    - Type_M: -0.0917

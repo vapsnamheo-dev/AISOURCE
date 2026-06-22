@@ -1,17 +1,20 @@
 {
-  "created_at": "2026-06-19T07:41:03",
+  "created_at": "2026-06-22T02:04:18",
   "dataset": "AI4I 2020 Predictive Maintenance (10,000 rows, 8:2 train/test)",
   "target": {
     "0": "정상(normal)",
     "1": "고장(failure)"
   },
-  "n_features": 8,
+  "n_features": 11,
   "features": [
     "Air temperature [K]",
     "Process temperature [K]",
     "Rotational speed [rpm]",
     "Torque [Nm]",
     "Tool wear [min]",
+    "Power [W]",
+    "Overstrain [minNm]",
+    "Temp diff [K]",
     "Type_H",
     "Type_L",
     "Type_M"
@@ -24,6 +27,9 @@
       "Rotational speed [rpm]": 1539.3569,
       "Torque [Nm]": 40.0034,
       "Tool wear [min]": 107.685,
+      "Power [W]": 6282.6179,
+      "Overstrain [minNm]": 4302.6842,
+      "Temp diff [K]": 10.0006,
       "Type_H": 0.0986,
       "Type_L": 0.6038,
       "Type_M": 0.2976
@@ -34,6 +40,9 @@
       "Rotational speed [rpm]": 180.9716,
       "Torque [Nm]": 10.0189,
       "Tool wear [min]": 63.608,
+      "Power [W]": 1072.3515,
+      "Overstrain [minNm]": 2820.001,
+      "Temp diff [K]": 0.9998,
       "Type_H": 0.2982,
       "Type_L": 0.4891,
       "Type_M": 0.4572
@@ -152,27 +161,33 @@
         "roc_auc": 0.9069
       },
       "weights_standardized": {
-        "Air temperature [K]": 1.7826,
-        "Process temperature [K]": -1.2324,
-        "Rotational speed [rpm]": 1.7311,
-        "Torque [Nm]": 2.406,
-        "Tool wear [min]": 0.8613,
-        "Type_H": -0.0628,
-        "Type_L": 0.1263,
-        "Type_M": -0.0941
+        "Air temperature [K]": 0.2577,
+        "Process temperature [K]": -0.0922,
+        "Rotational speed [rpm]": 2.4726,
+        "Torque [Nm]": 7.8935,
+        "Tool wear [min]": 2.3403,
+        "Power [W]": -4.2176,
+        "Overstrain [minNm]": -1.2883,
+        "Temp diff [K]": -0.6511,
+        "Type_H": -0.0422,
+        "Type_L": 0.1115,
+        "Type_M": -0.0917
       },
-      "intercept_standardized": -1.477,
+      "intercept_standardized": -1.8981,
       "weights_original_space": {
-        "Air temperature [K]": 0.892749,
-        "Process temperature [K]": -0.833093,
-        "Rotational speed [rpm]": 0.009566,
-        "Torque [Nm]": 0.240148,
-        "Tool wear [min]": 0.01354,
-        "Type_H": -0.210783,
-        "Type_L": 0.258214,
-        "Type_M": -0.20587
+        "Air temperature [K]": 0.12906,
+        "Process temperature [K]": -0.062338,
+        "Rotational speed [rpm]": 0.013663,
+        "Torque [Nm]": 0.787859,
+        "Tool wear [min]": 0.036792,
+        "Power [W]": -0.003933,
+        "Overstrain [minNm]": -0.000457,
+        "Temp diff [K]": -0.651244,
+        "Type_H": -0.141572,
+        "Type_L": 0.227936,
+        "Type_M": -0.200651
       },
-      "intercept_original_space": -36.9063,
+      "intercept_original_space": -44.6785,
       "note": "모델은 StandardScaler 표준화 입력을 사용. weights_standardized가 실제 학습 가중치이며, weights_original_space는 원본 단위 환산값."
     }
   }

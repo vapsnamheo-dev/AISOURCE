@@ -1,0 +1,6 @@
+feature,n_outliers,pct
+Air temperature [K],0,0.0
+Process temperature [K],0,0.0
+Rotational speed [rpm],418,4.18
+Torque [Nm],69,0.69
+Tool wear [min],0,0.0
