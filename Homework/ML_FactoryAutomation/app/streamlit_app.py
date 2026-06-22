@@ -10,8 +10,19 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import os
 import pandas as pd
 import streamlit as st
+
+# Streamlit secrets → os.environ 주입 (src.config 가 import 되기 전에 실행되어야 함)
+# 로컬: .streamlit/secrets.toml / Cloud: Streamlit Cloud Secrets 설정
+try:
+    _secret_db = st.secrets.get("DATABASE_URL")
+    if _secret_db:
+        os.environ.setdefault("DATABASE_URL", _secret_db)
+except Exception:
+    pass
+
 from src import db, predict, model_store, synth_ai4i
 
 st.set_page_config(page_title="설비 고장 예측 (PdM-Guard)", page_icon="🛠️", layout="wide")
@@ -130,21 +141,40 @@ with st.sidebar:
 
     st.divider()
     st.subheader("⚙️ 판정 임계값")
+
+    # 세션 첫 로드 시에만 DB에서 기본값 읽기
+    if "thr_db_loaded" not in st.session_state:
+        try:
+            _db_thr = model_store.load_threshold_from_db()
+            st.session_state["thr_default"] = _db_thr if _db_thr is not None else 0.85
+        except Exception:
+            st.session_state["thr_default"] = 0.85
+        st.session_state["thr_db_loaded"] = True
+
     threshold = st.slider(
-        "고장 판정 임계값", 0.0, 1.0, 0.85, 0.01,
+        "고장 판정 임계값", 0.0, 1.0,
+        float(st.session_state["thr_default"]), 0.01,
         help="이 값 이상의 고장 확률을 '고장'으로 판정합니다."
     )
-    if "thr_history" not in st.session_state:
-        st.session_state["thr_history"] = [(0.85, "초기값")]
-    last_thr = st.session_state["thr_history"][-1][0]
-    if abs(threshold - last_thr) > 1e-9:
-        import datetime
-        st.session_state["thr_history"].append(
-            (threshold, datetime.datetime.now().strftime("%H:%M:%S"))
-        )
-    with st.expander("임계값 변경 이력"):
-        for val, ts in reversed(st.session_state["thr_history"]):
-            st.write(f"{ts} → {val:.2f}")
+    if st.button("💾 이 임계값 저장 (DB)", help="저장 시 다음 실행에서도 이 값이 기본값으로 유지됩니다."):
+        try:
+            model_store.save_threshold_to_db(threshold)
+            st.session_state["thr_default"] = threshold
+            st.success(f"임계값 {threshold:.2f} 저장 완료!")
+        except Exception as _e:
+            st.error(f"저장 실패: {_e}")
+
+    with st.expander("임계값 변경 이력 (DB)"):
+        try:
+            _hist = model_store.load_threshold_history(limit=20)
+            if _hist:
+                for _h in _hist:
+                    _ts = _h["changed_at"].strftime("%Y-%m-%d %H:%M")
+                    st.write(f"{_ts}  {_h['old']:.2f} → **{_h['new']:.2f}**")
+            else:
+                st.caption("저장된 이력 없음 (저장 버튼을 눌러야 기록됩니다)")
+        except Exception:
+            st.caption("이력 로드 실패")
 
 tab1, tab2, tab3 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증", "📊 성능 대시보드"])
 

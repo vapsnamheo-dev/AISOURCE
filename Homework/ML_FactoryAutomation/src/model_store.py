@@ -164,3 +164,73 @@ def ensure_model_in_db(which: str = "xgb", name: str = "pdm-failure", session=No
         return mid
     except Exception:
         return save_model_to_db(which=which, name=name, session=session)
+
+
+def load_threshold_from_db(name: str = "pdm-failure", session=None) -> float | None:
+    """DB 활성 모델의 현재 threshold 반환. 모델 없으면 None."""
+    own = session is None
+    session = session or db.get_session()
+    try:
+        reg = session.execute(
+            select(db.ModelRegistry)
+            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
+            .order_by(desc(db.ModelRegistry.trained_at))
+        ).scalars().first()
+        return float(reg.threshold) if reg is not None and reg.threshold is not None else None
+    finally:
+        if own:
+            session.close()
+
+
+def save_threshold_to_db(new_threshold: float, name: str = "pdm-failure", session=None) -> None:
+    """활성 모델의 threshold를 DB에 업데이트하고 ThresholdHistory에 이력 기록.
+
+    캐시도 무효화하여 다음 예측 시 새 threshold를 반영.
+    """
+    own = session is None
+    session = session or db.get_session()
+    try:
+        reg = session.execute(
+            select(db.ModelRegistry)
+            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
+            .order_by(desc(db.ModelRegistry.trained_at))
+        ).scalars().first()
+        if reg is None:
+            raise ValueError(f"DB에 활성 모델 없음: name={name}")
+        old_value = float(reg.threshold) if reg.threshold is not None else 0.5
+        reg.threshold = round(new_threshold, 4)
+        session.add(db.ThresholdHistory(
+            model_id=reg.model_id,
+            old_value=round(old_value, 4),
+            new_value=round(new_threshold, 4),
+        ))
+        session.commit()
+        _CACHE.pop(name, None)
+    finally:
+        if own:
+            session.close()
+
+
+def load_threshold_history(name: str = "pdm-failure", limit: int = 20, session=None) -> list[dict]:
+    """DB에 저장된 threshold 변경 이력 반환 (최신순)."""
+    own = session is None
+    session = session or db.get_session()
+    try:
+        reg = session.execute(
+            select(db.ModelRegistry)
+            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
+            .order_by(desc(db.ModelRegistry.trained_at))
+        ).scalars().first()
+        if reg is None:
+            return []
+        rows = session.execute(
+            select(db.ThresholdHistory)
+            .where(db.ThresholdHistory.model_id == reg.model_id)
+            .order_by(desc(db.ThresholdHistory.changed_at))
+            .limit(limit)
+        ).scalars().all()
+        return [{"old": float(r.old_value), "new": float(r.new_value),
+                 "changed_at": r.changed_at} for r in rows]
+    finally:
+        if own:
+            session.close()

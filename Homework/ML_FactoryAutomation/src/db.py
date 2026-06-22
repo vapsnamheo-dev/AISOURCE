@@ -18,6 +18,9 @@ from sqlalchemy.orm import (DeclarativeBase, Mapped, mapped_column,
 from src import config
 
 
+
+
+
 class Base(DeclarativeBase):
     pass
 
@@ -82,12 +85,31 @@ class Prediction(Base):
     model: Mapped["ModelRegistry"] = relationship(back_populates="predictions")
 
 
+class ThresholdHistory(Base):
+    """운영자가 '저장' 버튼으로 확정한 임계값 변경 이력."""
+    __tablename__ = "threshold_history"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    model_id: Mapped[int] = mapped_column(ForeignKey("model_registry.model_id"), nullable=True)
+    old_value: Mapped[float] = mapped_column(Numeric(5, 4))
+    new_value: Mapped[float] = mapped_column(Numeric(5, 4))
+    changed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+_ENGINE = None  # 프로세스 내 엔진 싱글톤
+
+
 def get_engine(url: str | None = None):
-    return create_engine(url or config.DATABASE_URL, future=True)
+    """엔진 싱글톤 반환. url 지정 시 새 엔진 생성(init_db 전용)."""
+    global _ENGINE
+    if _ENGINE is None or url is not None:
+        effective_url = url or config.DATABASE_URL
+        # pool_pre_ping: 끊긴 연결을 자동 재연결 (Supabase idle timeout 대응)
+        _ENGINE = create_engine(effective_url, future=True, pool_pre_ping=True)
+    return _ENGINE
 
 
-def init_db(engine=None):
-    engine = engine or get_engine()
+def init_db(url: str | None = None):
+    engine = get_engine(url)
     Base.metadata.create_all(engine)
     # 룩업 시드
     Session = sessionmaker(bind=engine)
