@@ -10,18 +10,22 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import os
 import pandas as pd
 import streamlit as st
 
-# Streamlit secrets → os.environ 주입 (src.config 가 import 되기 전에 실행되어야 함)
-# 로컬: .streamlit/secrets.toml / Cloud: Streamlit Cloud Secrets 설정
-try:
-    _secret_db = st.secrets.get("DATABASE_URL")
-    if _secret_db:
-        os.environ.setdefault("DATABASE_URL", _secret_db)
-except Exception:
-    pass
+# ── [PostgreSQL 영구저장 시 활성화] ─────────────────────────────────────────
+# Supabase 등 외부 DB 연동 시 아래 블록의 주석을 해제하고
+# Streamlit Cloud Secrets 에 DATABASE_URL 을 설정하세요.
+# secrets.toml.example 참고.
+#
+# import os
+# try:
+#     _secret_db = st.secrets.get("DATABASE_URL")
+#     if _secret_db:
+#         os.environ.setdefault("DATABASE_URL", _secret_db)
+# except Exception:
+#     pass
+# ────────────────────────────────────────────────────────────────────────────
 
 from src import db, predict, model_store, synth_ai4i
 

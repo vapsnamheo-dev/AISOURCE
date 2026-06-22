@@ -6,6 +6,6 @@ xgboost>=2.0
 matplotlib>=3.7
 seaborn>=0.12
 sqlalchemy>=2.0
-psycopg2-binary>=2.9
+# psycopg2-binary>=2.9  # [PostgreSQL 영구저장 시 활성화] Supabase 등 외부 DB 연동 시 주석 해제
 joblib>=1.3
 google-generativeai>=0.5

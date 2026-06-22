@@ -95,21 +95,32 @@ class ThresholdHistory(Base):
     changed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
 
 
-_ENGINE = None  # 프로세스 내 엔진 싱글톤
+# ── [PostgreSQL 영구저장 시 활성화] ─────────────────────────────────────────
+# 외부 DB(Supabase 등) 연동 시 아래 싱글톤 블록을 활성화하고
+# 아래 단순 버전 get_engine / init_db 를 주석 처리하세요.
+#
+# _ENGINE = None
+#
+# def get_engine(url: str | None = None):
+#     global _ENGINE
+#     if _ENGINE is None or url is not None:
+#         effective_url = url or config.DATABASE_URL
+#         # pool_pre_ping: 끊긴 연결 자동 재연결 (Supabase idle timeout 대응)
+#         _ENGINE = create_engine(effective_url, future=True, pool_pre_ping=True)
+#     return _ENGINE
+#
+# def init_db(url: str | None = None):
+#     engine = get_engine(url)
+#     Base.metadata.create_all(engine)
+# ────────────────────────────────────────────────────────────────────────────
 
 
 def get_engine(url: str | None = None):
-    """엔진 싱글톤 반환. url 지정 시 새 엔진 생성(init_db 전용)."""
-    global _ENGINE
-    if _ENGINE is None or url is not None:
-        effective_url = url or config.DATABASE_URL
-        # pool_pre_ping: 끊긴 연결을 자동 재연결 (Supabase idle timeout 대응)
-        _ENGINE = create_engine(effective_url, future=True, pool_pre_ping=True)
-    return _ENGINE
+    return create_engine(url or config.DATABASE_URL, future=True)
 
 
-def init_db(url: str | None = None):
-    engine = get_engine(url)
+def init_db(engine=None):
+    engine = engine or get_engine()
     Base.metadata.create_all(engine)
     # 룩업 시드
     Session = sessionmaker(bind=engine)
