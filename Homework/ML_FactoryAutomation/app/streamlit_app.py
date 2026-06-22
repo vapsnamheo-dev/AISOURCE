@@ -8,6 +8,7 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
+from datetime import datetime
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import pandas as pd
@@ -70,51 +71,6 @@ def _setup():
 
 engine, artifacts = _setup()
 
-
-@st.cache_data
-def _dashboard_metrics(data_path: str):
-    """학습/테스트 분할 동일 조건으로 테스트셋 예측 — model_store 파이프라인 재사용."""
-    from sklearn.model_selection import train_test_split
-    from src import config
-
-    df = pd.read_csv(data_path)
-
-    failure_map = {
-        "TWF": "TWF\n(공구마모)", "HDF": "HDF\n(방열)",
-        "PWF": "PWF\n(전력부족)", "OSF": "OSF\n(과부하)", "RNF": "RNF\n(무작위)",
-    }
-    failure_counts = {v: int(df[k].values.sum()) for k, v in failure_map.items() if k in df.columns}
-
-    # 동일 random_state로 테스트셋 분리
-    _, test_df = train_test_split(df, test_size=0.2, random_state=42)
-    test_df = test_df.reset_index(drop=True)
-
-    # 이미 검증된 predict 파이프라인 재사용
-    out, _, has_actual = model_store.predict_dataframe_from_db(test_df)
-
-    tp = tn = fp = fn = 0
-    if has_actual:
-        tp = int(((out["pred_label"] == 1) & (out["actual"] == 1)).sum())
-        tn = int(((out["pred_label"] == 0) & (out["actual"] == 0)).sum())
-        fp = int(((out["pred_label"] == 1) & (out["actual"] == 0)).sum())
-        fn = int(((out["pred_label"] == 0) & (out["actual"] == 1)).sum())
-
-    total_n = max(len(out), 1)
-    acc = (tp + tn) / total_n
-    precision = tp / max(tp + fp, 1)
-    recall = tp / max(tp + fn, 1)
-    f1 = 2 * precision * recall / max(precision + recall, 1e-9)
-
-    y = df["Target"].values if "Target" in df.columns else []
-    return {
-        "total": len(df),
-        "train_n": len(df) - len(test_df), "test_n": len(test_df),
-        "total_failure": int(sum(y)), "total_normal": int(sum(1 for v in y if v == 0)),
-        "failure_counts": failure_counts,
-        "tp": tp, "tn": tn, "fp": fp, "fn": fn,
-        "acc": acc, "precision": precision, "recall": recall, "f1": f1,
-    }
-
 st.title("🛠️ 설비 고장 예측 (PdM-Guard)")
 st.caption("센서값으로 XGBoost가 고장 확률을 예측합니다. (라벨: 0=정상, 1=고장)")
 
@@ -128,7 +84,26 @@ with st.sidebar:
     wear = st.slider("공구 마모 [min]", 0, 260, 100, 1)
     go = st.button("고장 예측하기", type="primary")
 
-tab1, tab2, tab3 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증", "📊 성능 대시보드"])
+    # ── 판정 임계값 (운영 조정 가능) ──
+    st.divider()
+    st.subheader("⚙️ 판정 임계값")
+    # 기본값 0.85 = 현 프로젝트 F1 최적(T*≈0.85): 재현율(0.809) 유지 + 정밀도 0.833→0.932 (오경보↓)
+    DEFAULT_THRESHOLD = 0.85
+    threshold = st.slider(
+        "고장 판정 임계값", 0.0, 1.0, DEFAULT_THRESHOLD, 0.01,
+        help="고장 확률이 이 값 이상이면 '고장'으로 판정. 낮추면 재현율↑(놓침↓), "
+             "높이면 정밀도↑(오경보↓). 기본 0.85는 PR곡선상 F1 최적값.")
+    # 변경 이력 로깅 (운영 권장 흐름) — 데모는 세션 기록, 운영은 DB/로그 저장 권장
+    if "thr_log" not in st.session_state:
+        st.session_state.thr_log = []
+    if (not st.session_state.thr_log) or st.session_state.thr_log[-1][1] != threshold:
+        st.session_state.thr_log.append((datetime.now().strftime("%H:%M:%S"), threshold))
+    with st.expander("임계값 변경 이력"):
+        for ts, thv in st.session_state.thr_log[-10:]:
+            st.write(f"- {ts} → {thv:.2f}")
+        st.caption("※ 운영 환경에서는 이 이력을 DB/로그 저장소에 영구 기록하세요.")
+
+tab1, tab2 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증"])
 
 with tab1:
     c1, c2 = st.columns([1, 1])
@@ -137,6 +112,7 @@ with tab1:
                "rotational_speed": rpm, "torque": torque, "tool_wear": wear}
         with db.get_session(engine) as s:
             res = predict.predict_and_log(inp, s, artifacts=artifacts)
+        res["pred_label"] = int(res["pred_proba"] >= threshold)  # 사이드바 임계값 적용
         actual = synth_ai4i.actual_label(type_, air, proc, rpm, torque, wear)
         with c1:
             st.subheader("예측 결과")
@@ -171,7 +147,10 @@ with tab2:
     if up is not None:
         df = pd.read_csv(up)
         out, model_id, has_actual = model_store.predict_dataframe_from_db(df)
-        st.write(f"총 **{len(out):,}건** 예측 완료 (DB 활성 모델 id={model_id}).")
+        out["pred_label"] = (out["pred_proba"] >= threshold).astype(int)  # 임계값 적용
+        if has_actual and "actual" in out.columns:
+            out["match"] = (out["pred_label"] == out["actual"])
+        st.write(f"총 **{len(out):,}건** 예측 완료 (DB 활성 모델 id={model_id}, 임계값 {threshold:.2f}).")
         result_ctx = ""
         if has_actual:
             tp = int(((out["pred_label"] == 1) & (out["actual"] == 1)).sum())
@@ -257,111 +236,3 @@ with tab2:
             if cc2.button("🗑️ 히스토리 비우기"):
                 st.session_state["ai_log"] = []
                 st.rerun()
-
-with tab3:
-    import matplotlib.pyplot as plt
-    from matplotlib.patches import Patch
-
-    st.subheader("📊 설비 고장 예측 모델 — 성능 대시보드")
-    st.caption("데이터: predictive_maintenance.csv · 모델: XGBoost · 테스트셋 20% (random_state=42)")
-
-    try:
-        from src import config as _cfg
-        d = _dashboard_metrics(str(_cfg.DATA_PATH))
-    except Exception as e:
-        st.error(f"대시보드 데이터 로드 실패: {e}")
-        d = None
-
-    if d:
-        # ── KPI 카드 ──────────────────────────────────────────────
-        k1, k2, k3, k4 = st.columns(4)
-        k1.metric("전체 데이터", f"{d['total']:,} 건",
-                  f"학습 {d['train_n']:,} / 테스트 {d['test_n']:,}")
-        k2.metric("정상 건수 (전체)", f"{d['total_normal']:,} 건",
-                  f"정상률 {d['total_normal']/d['total']*100:.1f}%")
-        k3.metric("고장 건수 (전체)", f"{d['total_failure']:,} 건",
-                  f"불량률 {d['total_failure']/d['total']*100:.1f}%")
-        k4.metric("테스트 정확도", f"{d['acc']*100:.1f} %",
-                  f"F1 {d['f1']*100:.1f}%")
-
-        st.divider()
-        col_l, col_r = st.columns([3, 2])
-
-        # ── 파레토 차트 ───────────────────────────────────────────
-        with col_l:
-            st.markdown("**고장 유형별 파레토 분석 (전체 데이터)**")
-            fc = d["failure_counts"]
-            sorted_fc = sorted(fc.items(), key=lambda x: x[1], reverse=True)
-            labels_s = [k for k, _ in sorted_fc]
-            values_s = [v for _, v in sorted_fc]
-            total_f = max(sum(values_s), 1)
-            cumulative = [sum(values_s[:i+1]) / total_f * 100 for i in range(len(values_s))]
-
-            fig, ax1 = plt.subplots(figsize=(7, 4))
-            fig.patch.set_facecolor("#0e1117")
-            ax1.set_facecolor("#0e1117")
-
-            bar_colors = ["#e74c3c", "#e67e22", "#f1c40f", "#2ecc71", "#3498db"]
-            bars = ax1.bar(range(len(labels_s)), values_s,
-                           color=bar_colors[:len(labels_s)], edgecolor="none")
-            for i, v in enumerate(values_s):
-                ax1.text(i, v + 0.5, str(v), ha="center", va="bottom",
-                         color="white", fontsize=10, fontweight="bold")
-            ax1.set_xticks(range(len(labels_s)))
-            ax1.set_xticklabels(labels_s, color="white", fontsize=9)
-            ax1.set_ylabel("Count", color="white")
-            ax1.tick_params(axis="y", colors="white")
-            for spine in ax1.spines.values():
-                spine.set_color("#333")
-
-            ax2 = ax1.twinx()
-            ax2.plot(range(len(labels_s)), cumulative, "o-",
-                     color="#00d4ff", lw=2, ms=6, label="누적%")
-            ax2.axhline(80, color="#ffcc00", linestyle="--", lw=1, alpha=0.7)
-            ax2.set_ylabel("Cumulative %", color="#00d4ff")
-            ax2.tick_params(colors="#00d4ff")
-            ax2.set_ylim(0, 115)
-            for s in ["top", "left", "bottom"]:
-                ax2.spines[s].set_visible(False)
-            ax2.spines["right"].set_color("#00d4ff")
-
-            ax1.set_title("Failure Type Pareto", color="white", fontsize=12, pad=8)
-            plt.tight_layout()
-            st.pyplot(fig)
-            plt.close(fig)
-
-        # ── 도넛 차트 (정확도) ────────────────────────────────────
-        with col_r:
-            st.markdown("**테스트셋 예측 정확도**")
-            fig2, ax = plt.subplots(figsize=(4, 4))
-            fig2.patch.set_facecolor("#0e1117")
-            ax.set_facecolor("#0e1117")
-
-            acc_v = d["acc"] * 100
-            ax.pie([acc_v, 100 - acc_v],
-                   colors=["#2ecc71", "#e74c3c"],
-                   startangle=90,
-                   wedgeprops=dict(width=0.45, edgecolor="#0e1117", linewidth=3))
-            ax.text(0, 0.1, f"{acc_v:.1f}%", ha="center", va="center",
-                    fontsize=26, fontweight="bold", color="white")
-            ax.text(0, -0.28, "Accuracy", ha="center", va="center",
-                    fontsize=11, color="#aaaaaa")
-            ax.legend(handles=[Patch(color="#2ecc71", label="Correct"),
-                                Patch(color="#e74c3c", label="Error")],
-                      loc="lower center", ncol=2, frameon=False,
-                      labelcolor="white", fontsize=9)
-            ax.set_title("Test Set Performance", color="white", fontsize=12, pad=8)
-            plt.tight_layout()
-            st.pyplot(fig2)
-            plt.close(fig2)
-
-        # ── 혼동행렬 + 상세 지표 ──────────────────────────────────
-        st.divider()
-        st.markdown("**혼동행렬 · 상세 지표 (테스트셋)**")
-        m1, m2, m3, m4, m5, m6 = st.columns(6)
-        m1.metric("TP (탐지성공)", d["tp"])
-        m2.metric("TN (정상확인)", d["tn"])
-        m3.metric("FP (오경보)", d["fp"])
-        m4.metric("FN (고장놓침)", d["fn"])
-        m5.metric("Precision", f"{d['precision']*100:.1f}%")
-        m6.metric("Recall", f"{d['recall']*100:.1f}%")
