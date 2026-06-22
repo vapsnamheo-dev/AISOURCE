@@ -128,6 +128,24 @@ with st.sidebar:
     wear = st.slider("공구 마모 [min]", 0, 260, 100, 1)
     go = st.button("고장 예측하기", type="primary")
 
+    st.divider()
+    st.subheader("⚙️ 판정 임계값")
+    threshold = st.slider(
+        "고장 판정 임계값", 0.0, 1.0, 0.85, 0.01,
+        help="이 값 이상의 고장 확률을 '고장'으로 판정합니다."
+    )
+    if "thr_history" not in st.session_state:
+        st.session_state["thr_history"] = [(0.85, "초기값")]
+    last_thr = st.session_state["thr_history"][-1][0]
+    if abs(threshold - last_thr) > 1e-9:
+        import datetime
+        st.session_state["thr_history"].append(
+            (threshold, datetime.datetime.now().strftime("%H:%M:%S"))
+        )
+    with st.expander("임계값 변경 이력"):
+        for val, ts in reversed(st.session_state["thr_history"]):
+            st.write(f"{ts} → {val:.2f}")
+
 tab1, tab2, tab3 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증", "📊 성능 대시보드"])
 
 with tab1:
@@ -141,14 +159,15 @@ with tab1:
         with c1:
             st.subheader("예측 결과")
             st.metric("고장 확률", f"{res['pred_proba']*100:.1f} %")
-            if res["pred_label"] == 1:
+            pred_by_thr = 1 if res["pred_proba"] >= threshold else 0
+            if pred_by_thr == 1:
                 st.error("⚠️ 예측: 고장 위험 (점검 권장)")
             else:
                 st.success("✅ 예측: 정상 범위")
             st.markdown("**실제(물리규칙) 판정 vs 예측**")
             st.write(f"- 실제 결과(물리규칙): **{'고장' if actual == 1 else '정상'}**")
-            st.write(f"- 모델 예측: **{'고장' if res['pred_label'] == 1 else '정상'}**")
-            if res["pred_label"] == actual:
+            st.write(f"- 모델 예측: **{'고장' if pred_by_thr == 1 else '정상'}** (임계값 {threshold:.2f})")
+            if pred_by_thr == actual:
                 st.success("🎯 예측 일치 (정답)")
             else:
                 st.warning("❌ 예측 불일치 (오답)")
