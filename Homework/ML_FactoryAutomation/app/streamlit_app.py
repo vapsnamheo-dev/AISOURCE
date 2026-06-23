@@ -103,16 +103,6 @@ with st.sidebar:
             st.write(f"- {ts} → {thv:.2f}")
         st.caption("※ 운영 환경에서는 이 이력을 DB/로그 저장소에 영구 기록하세요.")
 
-    # ── QA 시험결과 다운로드 ──
-    st.divider()
-    _qa_path = Path(__file__).resolve().parent.parent / "산출물" / "QA_시험결과_20260623.md"
-    if _qa_path.exists():
-        st.download_button(
-            "📥 QA 시험결과 다운로드",
-            data=_qa_path.read_text(encoding="utf-8"),
-            file_name="QA_시험결과_20260623.md",
-            mime="text/markdown",
-        )
 
 tab1, tab2, tab3 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증", "📊 성능 대시보드"])
 
@@ -557,3 +547,50 @@ with tab3:
                 )
             except Exception as e:
                 st.error(f"특성 중요도 계산 오류: {e}")
+
+    # ── 대시보드 결과 다운로드 ─────────────────────────────────
+    st.divider()
+
+    def _build_dashboard_report() -> str:
+        lines = [
+            "# PdM-Guard Performance Dashboard Report",
+            "",
+            f"- Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"- Decision Threshold T*: {config.DECISION_THRESHOLD}",
+            "",
+            "## Model Performance Comparison",
+            "",
+        ]
+        if model_info.get("models"):
+            lines += [
+                "| Model | Accuracy | Precision | Recall | F1 | ROC-AUC |",
+                "|---|---|---|---|---|---|",
+            ]
+            for name, meta in model_info["models"].items():
+                m = meta.get("metrics", {})
+                lines.append(
+                    f"| {name} | {m.get('accuracy', 0):.4f} | {m.get('precision', 0):.4f} |"
+                    f" {m.get('recall', 0):.4f} | {m.get('f1', 0):.4f} | {m.get('roc_auc', 0):.4f} |"
+                )
+        else:
+            lines.append("No model info found.")
+
+        lines += ["", "## Failure Type Pareto", ""]
+        if not train_df.empty and "Failure Type" in train_df.columns:
+            fc = (train_df[train_df["Failure Type"] != "No Failure"]
+                  ["Failure Type"].value_counts())
+            total = fc.sum()
+            lines += ["| Failure Type | Count | Share (%) |", "|---|---|---|"]
+            for ft, cnt in fc.items():
+                lines.append(f"| {ft} | {cnt} | {cnt/max(total,1)*100:.1f}% |")
+        else:
+            lines.append("No failure type data available.")
+
+        return "\n".join(lines)
+
+    st.download_button(
+        "📥 대시보드 결과 저장",
+        data=_build_dashboard_report(),
+        file_name=f"dashboard_{datetime.now().strftime('%Y%m%d_%H%M')}.md",
+        mime="text/markdown",
+    )
