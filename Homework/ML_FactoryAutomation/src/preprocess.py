@@ -19,6 +19,54 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from src import config
 
+# ── 업로드/외부 CSV 방어 유틸 ────────────────────────────────────────────────
+REQUIRED_INPUT_COLS = config.CATEGORICAL_FEATURES + config.NUMERIC_FEATURES  # Type + 센서 5
+
+
+def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """컬럼명 앞뒤 공백 제거(헤더 오염 방어). 예: 'Torque [Nm] ' → 'Torque [Nm]'."""
+    df = df.copy()
+    df.columns = [str(c).strip() for c in df.columns]
+    return df
+
+
+def validate_and_clean(df: pd.DataFrame, require_target: bool = False):
+    """외부 CSV 방어: 컬럼명 정규화 → 필수컬럼 검사 → 문자열 공백 제거 → 필수 센서 결측행 제거.
+
+    Returns
+    -------
+    (clean_df, report) : report = {n_in, n_out, stripped_cells, dropped_na, missing_cols}
+    필수 컬럼이 없으면 ValueError(친절한 메시지)를 발생시킨다.
+    """
+    report = {"n_in": int(len(df))}
+    df = normalize_columns(df)
+
+    required = list(REQUIRED_INPUT_COLS) + ([config.TARGET] if require_target else [])
+    missing = [c for c in required if c not in df.columns]
+    report["missing_cols"] = missing
+    if missing:
+        raise ValueError(f"필수 컬럼 누락: {missing}. 필요 컬럼: {required}")
+
+    # 문자열(범주형) 값 앞뒤 공백 제거 — 예: Type ' M ' → 'M'
+    stripped = 0
+    from pandas.api.types import is_object_dtype, is_string_dtype
+    obj_cols = [c for c in df.columns
+                if is_object_dtype(df[c]) or is_string_dtype(df[c])]
+    for c in obj_cols:
+        before = df[c].astype(str)
+        after = before.str.strip()
+        stripped += int((before != after).sum())
+        df[c] = after
+    report["stripped_cells"] = int(stripped)
+
+    # 필수 센서 결측 행 제거(예측 불가 행 방어)
+    n_before = len(df)
+    df = df.dropna(subset=config.NUMERIC_FEATURES).reset_index(drop=True)
+    report["dropped_na"] = int(n_before - len(df))
+    report["n_out"] = int(len(df))
+    return df, report
+
+
 
 def engineer(df: pd.DataFrame) -> pd.DataFrame:
     """물리 기반 파생 feature 추가(고장 규칙 대응). 원본 컬럼은 보존."""
@@ -63,8 +111,10 @@ def build_features(df: pd.DataFrame, encoder: OneHotEncoder | None = None):
 
     encoder=None 이면 저장된 인코더를 로드하고(없으면 새로 적합·저장),
     추론 시에는 학습 때 저장된 인코더가 사용되어 미정의 범주를 안전하게 0 처리한다.
+
+    진입부에서 normalize_columns()로 컬럼명 공백을 먼저 제거(헤더 오염 방어).
     """
-    df = df.copy()
+    df = normalize_columns(df)  # 진입 전 방어: 컬럼명 공백 정규화
     drop = [c for c in config.DROP_COLS if c in df.columns]
     df = df.drop(columns=drop)
     df = engineer(df)  # 물리 기반 파생 feature 추가
