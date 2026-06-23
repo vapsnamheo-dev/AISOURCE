@@ -146,6 +146,28 @@ with tab2:
     up = st.file_uploader("CSV 파일 선택", type=["csv"])
     if up is not None:
         df = pd.read_csv(up)
+
+        # ── 업로드 CSV 방어 가드 (필수컬럼 / 컬럼명·값 공백 / 필수 센서 결측) ──
+        from src import preprocess as _ppg
+        try:
+            df, _rep = _ppg.validate_and_clean(df, require_target=False)
+        except ValueError as _ve:
+            st.error(f"❌ 업로드 데이터 오류 — {_ve}")
+            st.stop()
+        _msgs = []
+        if _rep["stripped_cells"]:
+            _msgs.append(f"문자열 앞뒤 공백 {_rep['stripped_cells']}건 정리")
+        if _rep["dropped_na"]:
+            _msgs.append(f"필수 센서 결측 {_rep['dropped_na']}행 제외")
+        if _msgs:
+            st.warning("⚠️ 전처리 가드: " + " · ".join(_msgs)
+                       + f"  (입력 {_rep['n_in']:,} → 검증 {_rep['n_out']:,}건)")
+        else:
+            st.caption(f"✅ 전처리 가드 통과 — 결측·공백 없음 ({_rep['n_out']:,}건)")
+        if _rep["n_out"] == 0:
+            st.error("유효한 행이 없습니다. CSV 내용을 확인하세요.")
+            st.stop()
+
         out, model_id, has_actual = model_store.predict_dataframe_from_db(df)
         out["pred_label"] = (out["pred_proba"] >= threshold).astype(int)  # 임계값 적용
         if has_actual and "actual" in out.columns:
@@ -242,8 +264,6 @@ with tab2:
 # ══════════════════════════════════════════════════════════════
 with tab3:
     import json
-    import math
-    import numpy as np
     import matplotlib.pyplot as plt
     import matplotlib
     matplotlib.rcParams["font.family"] = "DejaVu Sans"
