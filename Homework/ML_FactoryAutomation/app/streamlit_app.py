@@ -142,10 +142,51 @@ with tab1:
 
 with tab2:
     st.subheader("CSV 일괄 검증 — DB 모델로 예측 후 실제 결과와 비교")
-    st.caption("demo data/demo_1000.csv 처럼 Type·센서값(+Target 실제라벨)이 든 CSV를 업로드하세요.")
-    up = st.file_uploader("CSV 파일 선택", type=["csv"])
-    if up is not None:
-        df = pd.read_csv(up)
+    st.caption("demo data/demo_1000.csv 처럼 Type·센서값(+Target 실제라벨)이 든 CSV를 업로드하거나 repo 샘플을 불러오세요.")
+
+    input_mode = st.radio(
+        "입력 방법",
+        ["파일 업로드", "레포 샘플 불러오기"],
+        horizontal=True,
+        key="batch_input_mode"
+    )
+
+    df = None
+    if input_mode == "파일 업로드":
+        up = st.file_uploader("CSV 파일 선택", type=["csv"])
+        if up is not None:
+            df = pd.read_csv(up)
+            st.success("업로드된 CSV를 불러왔습니다.")
+        if "batch_df" in st.session_state:
+            st.session_state.pop("batch_df", None)
+            st.session_state.pop("batch_source", None)
+    else:
+        sample_paths = {
+            "demo data/demo_1000.csv": Path(__file__).resolve().parent.parent / "demo data" / "demo_1000.csv",
+            "predictive_maintenance.csv": Path(__file__).resolve().parent.parent / "predictive_maintenance.csv",
+        }
+        sample_choice = st.selectbox("샘플 데이터 선택", list(sample_paths.keys()))
+        if st.button("📂 레포 샘플 로드"):
+            sample_path = sample_paths[sample_choice]
+            if not sample_path.exists():
+                st.error(f"샘플 파일을 찾을 수 없습니다: {sample_path}")
+            else:
+                df = pd.read_csv(sample_path)
+                st.session_state.batch_df = df.to_dict("records")
+                st.session_state.batch_source = sample_choice
+                st.success(f"샘플 '{sample_choice}' 로드 완료 ({len(df):,}건)")
+
+        if df is None and st.session_state.get("batch_df") is not None:
+            try:
+                df = pd.DataFrame(st.session_state.batch_df)
+            except Exception:
+                st.session_state.pop("batch_df", None)
+                st.session_state.pop("batch_source", None)
+
+        if df is None:
+            st.info("레포 샘플을 불러오려면 위에서 샘플을 선택하고 버튼을 누르세요.")
+
+    if df is not None:
 
         # ── 업로드 CSV 방어 가드 (필수컬럼 / 컬럼명·값 공백 / 필수 센서 결측) ──
         from src import preprocess as _ppg
