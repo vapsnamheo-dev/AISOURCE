@@ -34,7 +34,7 @@ def _deserialize(blob: bytes) -> dict:
 
 
 def save_model_to_db(which: str = "xgb", *, name: str = "pdm-failure",
-                     version: str = "v1", threshold: float = 0.5,
+                     version: str = "v1", threshold: float = config.DECISION_THRESHOLD,
                      metrics: dict | None = None, session=None) -> int:
     """디스크의 학습 산출물을 직렬화하여 DB에 저장하고 model_id 반환.
 
@@ -95,7 +95,7 @@ def predict_from_db(inp: dict, name: str = "pdm-failure", session=None) -> dict:
     X = make_feature_row(inp, bundle["columns"])
     Xs = bundle["scaler"].transform(X)
     proba = float(bundle["model"].predict_proba(Xs)[0, 1])
-    th = float(bundle.get("threshold", 0.5))
+    th = float(bundle.get("threshold", config.DECISION_THRESHOLD))
     return {"pred_label": int(proba >= th), "pred_proba": round(proba, 4),
             "threshold": th, "model_id": model_id, "source": "db"}
 
@@ -122,7 +122,7 @@ def _load_metrics(which: str) -> dict:
 
 if __name__ == "__main__":
     db.init_db()
-    mid = save_model_to_db(which="xgb", threshold=0.5, metrics=_load_metrics("xgb"))
+    mid = save_model_to_db(which="xgb", threshold=config.DECISION_THRESHOLD, metrics=_load_metrics("xgb"))
     print(f"DB 저장 완료: model_id={mid}")
     demo = {"type": "L", "air_temperature": 300.0, "process_temperature": 310.0,
             "rotational_speed": 1500, "torque": 40.0, "tool_wear": 120}
@@ -146,7 +146,7 @@ def predict_dataframe_from_db(df, name: str = "pdm-failure", session=None):
     X = X.reindex(columns=bundle["columns"], fill_value=0)
     Xs = bundle["scaler"].transform(X)
     proba = bundle["model"].predict_proba(Xs)[:, 1]
-    th = float(bundle.get("threshold", 0.5))
+    th = float(bundle.get("threshold", config.DECISION_THRESHOLD))
     pred = (proba >= th).astype(int)
     out = df.copy()
     out["pred_proba"] = proba.round(4)
@@ -164,73 +164,3 @@ def ensure_model_in_db(which: str = "xgb", name: str = "pdm-failure", session=No
         return mid
     except Exception:
         return save_model_to_db(which=which, name=name, session=session)
-
-
-def load_threshold_from_db(name: str = "pdm-failure", session=None) -> float | None:
-    """DB 활성 모델의 현재 threshold 반환. 모델 없으면 None."""
-    own = session is None
-    session = session or db.get_session()
-    try:
-        reg = session.execute(
-            select(db.ModelRegistry)
-            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
-            .order_by(desc(db.ModelRegistry.trained_at))
-        ).scalars().first()
-        return float(reg.threshold) if reg is not None and reg.threshold is not None else None
-    finally:
-        if own:
-            session.close()
-
-
-def save_threshold_to_db(new_threshold: float, name: str = "pdm-failure", session=None) -> None:
-    """활성 모델의 threshold를 DB에 업데이트하고 ThresholdHistory에 이력 기록.
-
-    캐시도 무효화하여 다음 예측 시 새 threshold를 반영.
-    """
-    own = session is None
-    session = session or db.get_session()
-    try:
-        reg = session.execute(
-            select(db.ModelRegistry)
-            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
-            .order_by(desc(db.ModelRegistry.trained_at))
-        ).scalars().first()
-        if reg is None:
-            raise ValueError(f"DB에 활성 모델 없음: name={name}")
-        old_value = float(reg.threshold) if reg.threshold is not None else 0.5
-        reg.threshold = round(new_threshold, 4)
-        session.add(db.ThresholdHistory(
-            model_id=reg.model_id,
-            old_value=round(old_value, 4),
-            new_value=round(new_threshold, 4),
-        ))
-        session.commit()
-        _CACHE.pop(name, None)
-    finally:
-        if own:
-            session.close()
-
-
-def load_threshold_history(name: str = "pdm-failure", limit: int = 20, session=None) -> list[dict]:
-    """DB에 저장된 threshold 변경 이력 반환 (최신순)."""
-    own = session is None
-    session = session or db.get_session()
-    try:
-        reg = session.execute(
-            select(db.ModelRegistry)
-            .where(db.ModelRegistry.name == name, db.ModelRegistry.is_active == 1)
-            .order_by(desc(db.ModelRegistry.trained_at))
-        ).scalars().first()
-        if reg is None:
-            return []
-        rows = session.execute(
-            select(db.ThresholdHistory)
-            .where(db.ThresholdHistory.model_id == reg.model_id)
-            .order_by(desc(db.ThresholdHistory.changed_at))
-            .limit(limit)
-        ).scalars().all()
-        return [{"old": float(r.old_value), "new": float(r.new_value),
-                 "changed_at": r.changed_at} for r in rows]
-    finally:
-        if own:
-            session.close()

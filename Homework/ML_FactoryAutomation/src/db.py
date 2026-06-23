@@ -18,9 +18,6 @@ from sqlalchemy.orm import (DeclarativeBase, Mapped, mapped_column,
 from src import config
 
 
-
-
-
 class Base(DeclarativeBase):
     pass
 
@@ -83,36 +80,6 @@ class Prediction(Base):
     predicted_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
     reading: Mapped["SensorReading"] = relationship(back_populates="predictions")
     model: Mapped["ModelRegistry"] = relationship(back_populates="predictions")
-
-
-class ThresholdHistory(Base):
-    """운영자가 '저장' 버튼으로 확정한 임계값 변경 이력."""
-    __tablename__ = "threshold_history"
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    model_id: Mapped[int] = mapped_column(ForeignKey("model_registry.model_id"), nullable=True)
-    old_value: Mapped[float] = mapped_column(Numeric(5, 4))
-    new_value: Mapped[float] = mapped_column(Numeric(5, 4))
-    changed_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
-
-
-# ── [PostgreSQL 영구저장 시 활성화] ─────────────────────────────────────────
-# 외부 DB(Supabase 등) 연동 시 아래 싱글톤 블록을 활성화하고
-# 아래 단순 버전 get_engine / init_db 를 주석 처리하세요.
-#
-# _ENGINE = None
-#
-# def get_engine(url: str | None = None):
-#     global _ENGINE
-#     if _ENGINE is None or url is not None:
-#         effective_url = url or config.DATABASE_URL
-#         # pool_pre_ping: 끊긴 연결 자동 재연결 (Supabase idle timeout 대응)
-#         _ENGINE = create_engine(effective_url, future=True, pool_pre_ping=True)
-#     return _ENGINE
-#
-# def init_db(url: str | None = None):
-#     engine = get_engine(url)
-#     Base.metadata.create_all(engine)
-# ────────────────────────────────────────────────────────────────────────────
 
 
 def get_engine(url: str | None = None):

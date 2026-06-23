@@ -78,7 +78,7 @@ def predict_one(inp: dict, which: str = "xgb", artifacts=None) -> dict:
     X = make_feature_row(inp, cols)
     Xs = scaler.transform(X)
     proba = float(model.predict_proba(Xs)[0, 1])
-    label = int(proba >= 0.5)
+    label = int(proba >= config.DECISION_THRESHOLD)  # 운영 기본 임계값
     return {"pred_label": label, "pred_proba": round(proba, 4)}
 
 

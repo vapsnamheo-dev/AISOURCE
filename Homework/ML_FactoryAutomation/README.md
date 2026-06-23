@@ -46,7 +46,7 @@ pdm-guard/
 ## ⚙️ 기술 스택
 | 영역 | 스택 |
 |---|---|
-| 언어 | Python 3.11 |
+| 언어 | Python 3.10 |
 | ML | scikit-learn, xgboost, shap |
 | 데이터 | pandas, numpy |
 | 시각화 | matplotlib, seaborn |
