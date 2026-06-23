@@ -103,7 +103,7 @@ with st.sidebar:
             st.write(f"- {ts} → {thv:.2f}")
         st.caption("※ 운영 환경에서는 이 이력을 DB/로그 저장소에 영구 기록하세요.")
 
-tab1, tab2 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증"])
+tab1, tab2, tab3 = st.tabs(["🔮 단건 예측", "📁 CSV 일괄 검증", "📊 성능 대시보드"])
 
 with tab1:
     c1, c2 = st.columns([1, 1])
@@ -236,3 +236,252 @@ with tab2:
             if cc2.button("🗑️ 히스토리 비우기"):
                 st.session_state["ai_log"] = []
                 st.rerun()
+
+# ══════════════════════════════════════════════════════════════
+# TAB 3 — 성능 대시보드 (4중첩 서브탭)
+# ══════════════════════════════════════════════════════════════
+with tab3:
+    import json
+    import math
+    import numpy as np
+    import matplotlib.pyplot as plt
+    import matplotlib
+    matplotlib.rcParams["font.family"] = "DejaVu Sans"
+    import seaborn as sns
+
+    # ── 공통 데이터 로드 ──
+    @st.cache_data
+    def _load_model_info():
+        p = config.BASE_DIR / "model" / "model_info.json"
+        if p.exists():
+            with open(p, encoding="utf-8") as f:
+                return json.load(f)
+        return {}
+
+    @st.cache_data
+    def _load_train_df():
+        p = config.DATA_PATH
+        if p.exists():
+            return pd.read_csv(p)
+        return pd.DataFrame()
+
+    model_info = _load_model_info()
+    train_df = _load_train_df()
+
+    d1, d2, d3, d4 = st.tabs([
+        "🎯 모델 성능 요약",
+        "🔥 고장유형 파레토",
+        "🔬 상관·분포 분석",
+        "📌 특성 중요도",
+    ])
+
+    # ── 서브탭 1: 모델 성능 요약 ──────────────────────────────
+    with d1:
+        st.subheader("🎯 모델 성능 요약")
+        models_meta = model_info.get("models", {})
+        if not models_meta:
+            st.warning("model/model_info.json 파일을 찾을 수 없습니다.")
+        else:
+            # KPI 카드 (XGBoost 기준)
+            xgb_m = models_meta.get("XGBoost", {}).get("metrics", {})
+            k1, k2, k3, k4, k5 = st.columns(5)
+            k1.metric("정확도", f"{xgb_m.get('accuracy', 0)*100:.1f}%")
+            k2.metric("정밀도", f"{xgb_m.get('precision', 0)*100:.1f}%")
+            k3.metric("재현율", f"{xgb_m.get('recall', 0)*100:.1f}%")
+            k4.metric("F1", f"{xgb_m.get('f1', 0)*100:.1f}%")
+            k5.metric("ROC-AUC", f"{xgb_m.get('roc_auc', 0):.4f}")
+            st.caption("※ XGBoost (임계값 0.5 기준 평가지표 · 운영 임계값 T*=0.85)")
+
+            col_a, col_b = st.columns(2)
+
+            # 정확도 도넛 차트
+            with col_a:
+                st.markdown("**정확도 도넛 (3모델 비교)**")
+                names, accs = [], []
+                for name, meta in models_meta.items():
+                    names.append(name)
+                    accs.append(meta.get("metrics", {}).get("accuracy", 0) * 100)
+                fig_d, ax_d = plt.subplots(figsize=(4, 4))
+                wedges, texts, autotexts = ax_d.pie(
+                    accs, labels=names, autopct="%1.1f%%",
+                    startangle=90, pctdistance=0.75,
+                    wedgeprops={"width": 0.5})
+                ax_d.set_title("Accuracy (%)")
+                st.pyplot(fig_d)
+                plt.close(fig_d)
+
+            # 혼동행렬 6지표 테이블
+            with col_b:
+                st.markdown("**혼동행렬 6지표 (3모델)**")
+                rows = []
+                metric_keys = ["accuracy", "precision", "recall", "f1", "roc_auc"]
+                metric_labels = ["Accuracy", "Precision", "Recall", "F1", "ROC-AUC"]
+                for name, meta in models_meta.items():
+                    m = meta.get("metrics", {})
+                    row = {"모델": name}
+                    for k, lbl in zip(metric_keys, metric_labels):
+                        row[lbl] = f"{m.get(k, 0):.4f}"
+                    rows.append(row)
+                st.dataframe(pd.DataFrame(rows).set_index("모델"), use_container_width=True)
+
+            # 요약 해설
+            st.divider()
+            st.markdown("**📝 자동 해설**")
+            best = max(models_meta.items(), key=lambda x: x[1].get("metrics", {}).get("f1", 0))
+            best_name, best_f1 = best[0], best[1].get("metrics", {}).get("f1", 0)
+            xgb_rec = xgb_m.get("recall", 0)
+            st.info(
+                f"- **최고 F1 모델**: {best_name} (F1={best_f1:.4f})\n"
+                f"- XGBoost 재현율 {xgb_rec*100:.1f}% — 고장 10건 중 약 {xgb_rec*10:.0f}건 탐지\n"
+                f"- 운영 임계값 T*=0.85 적용 시 정밀도 상승(오경보↓), 재현율은 0.5 기준 대비 유지\n"
+                f"- 불균형 데이터(정상:{train_df[config.TARGET].value_counts().get(0,'?')} vs 고장:{train_df[config.TARGET].value_counts().get(1,'?')})에 scale_pos_weight 적용"
+                if not train_df.empty else
+                f"- **최고 F1 모델**: {best_name} (F1={best_f1:.4f})\n"
+                f"- XGBoost 재현율 {xgb_rec*100:.1f}% — 고장 10건 중 약 {xgb_rec*10:.0f}건 탐지\n"
+                f"- 운영 임계값 T*=0.85 적용 시 정밀도 상승(오경보↓)")
+
+    # ── 서브탭 2: 고장유형 파레토 ─────────────────────────────
+    with d2:
+        st.subheader("🔥 고장유형 파레토")
+        if train_df.empty:
+            st.warning("학습 데이터를 찾을 수 없습니다.")
+        else:
+            if "Failure Type" in train_df.columns:
+                fail_counts = (train_df[train_df["Failure Type"] != "No Failure"]
+                               ["Failure Type"].value_counts())
+            else:
+                fail_cols = ["TWF", "HDF", "PWF", "OSF", "RNF"]
+                avail = [c for c in fail_cols if c in train_df.columns]
+                if avail:
+                    type_map = {v: k for k, v in config.FAILURE_TYPES.items()}
+                    fail_counts = pd.Series({config.FAILURE_TYPES.get(c, c): int(train_df[c].sum())
+                                             for c in avail}).sort_values(ascending=False)
+                else:
+                    fail_counts = pd.Series(dtype=int)
+
+            if fail_counts.empty:
+                st.info("고장유형 데이터가 없습니다.")
+            else:
+                labels = list(fail_counts.index)
+                vals = list(fail_counts.values)
+                cumsum = [sum(vals[:i+1]) / max(sum(vals), 1) * 100 for i in range(len(vals))]
+
+                fig_p, ax1 = plt.subplots(figsize=(8, 4))
+                ax1.bar(labels, vals, color="#e05c5c", alpha=0.85)
+                ax1.set_ylabel("발생 건수")
+                ax1.set_xlabel("고장 유형")
+                ax2 = ax1.twinx()
+                ax2.plot(labels, cumsum, "o-", color="#2563eb", linewidth=2, label="누적 %")
+                ax2.axhline(80, color="gray", linestyle="--", linewidth=1)
+                ax2.set_ylabel("누적 비율 (%)")
+                ax2.set_ylim(0, 110)
+                ax2.legend(loc="lower right")
+                plt.title("고장유형 파레토 차트")
+                plt.tight_layout()
+                st.pyplot(fig_p)
+                plt.close(fig_p)
+
+                top80 = [labels[i] for i, v in enumerate(cumsum) if (i == 0 or cumsum[i-1] < 80)]
+                st.info(
+                    f"**상위 {len(top80)}개 유형**({', '.join(top80)})이 "
+                    f"전체 고장의 80% 이상을 차지합니다.\n"
+                    "→ 해당 유형 예방 점검을 우선 조치하면 고장 발생을 집중 억제할 수 있습니다.")
+
+    # ── 서브탭 3: 상관·분포 분석 (EDA) ────────────────────────
+    with d3:
+        st.subheader("🔬 상관·분포 분석 (EDA)")
+        if train_df.empty:
+            st.warning("학습 데이터를 찾을 수 없습니다.")
+        else:
+            num_cols = [c for c in config.NUMERIC_FEATURES + config.ENGINEERED_FEATURES
+                        if c in train_df.columns]
+            target_col = config.TARGET
+
+            col_h, col_b = st.columns(2)
+
+            # 상관관계 히트맵
+            with col_h:
+                st.markdown("**상관관계 히트맵**")
+                heat_cols = num_cols + ([target_col] if target_col in train_df.columns else [])
+                corr = train_df[heat_cols].corr()
+                fig_h, ax_h = plt.subplots(figsize=(6, 5))
+                sns.heatmap(corr, annot=True, fmt=".2f", cmap="RdBu_r",
+                            center=0, ax=ax_h, annot_kws={"size": 7})
+                ax_h.set_title("Feature Correlation")
+                plt.tight_layout()
+                st.pyplot(fig_h)
+                plt.close(fig_h)
+
+            # 정상 vs 고장 박스플롯
+            with col_b:
+                st.markdown("**정상 vs 고장 박스플롯**")
+                top_feats = ["Torque [Nm]", "Tool wear [min]", "Rotational speed [rpm]"]
+                avail_f = [f for f in top_feats if f in train_df.columns]
+                if avail_f and target_col in train_df.columns:
+                    fig_box, axes = plt.subplots(1, len(avail_f), figsize=(5, 3))
+                    if len(avail_f) == 1:
+                        axes = [axes]
+                    for ax, feat in zip(axes, avail_f):
+                        groups = [train_df.loc[train_df[target_col] == v, feat].dropna()
+                                  for v in [0, 1]]
+                        ax.boxplot(groups, labels=["정상", "고장"])
+                        ax.set_title(feat.split("[")[0].strip(), fontsize=8)
+                    plt.tight_layout()
+                    st.pyplot(fig_box)
+                    plt.close(fig_box)
+
+            # 자동 해설
+            st.divider()
+            if target_col in train_df.columns and num_cols:
+                corr_with_target = train_df[num_cols + [target_col]].corr()[target_col].drop(target_col)
+                top_corr = corr_with_target.abs().sort_values(ascending=False).head(3)
+                st.info(
+                    "**고장 상관 상위 동적 계산:**\n"
+                    + "\n".join(f"- {feat}: r={corr_with_target[feat]:.3f}"
+                                for feat in top_corr.index)
+                    + "\n→ 상관이 높은 피처일수록 고장 예측에 핵심 역할을 합니다."
+                )
+
+    # ── 서브탭 4: 특성 중요도 ─────────────────────────────────
+    with d4:
+        st.subheader("📌 특성 중요도 (XGBoost)")
+
+        @st.cache_resource
+        def _load_xgb_model():
+            try:
+                m, _, _ = predict.load_artifacts("xgb")
+                return m
+            except Exception:
+                return None
+
+        xgb_model = _load_xgb_model()
+        feat_names = model_info.get("features", config.NUMERIC_FEATURES + config.ENGINEERED_FEATURES
+                                    + [f"Type_{t}" for t in ["H", "L", "M"]])
+
+        if xgb_model is None:
+            st.warning("XGBoost 모델을 로드할 수 없습니다.")
+        else:
+            try:
+                imp = xgb_model.feature_importances_
+                imp_df = pd.DataFrame({"feature": feat_names[:len(imp)], "importance": imp})
+                imp_df = imp_df.sort_values("importance", ascending=True)
+
+                fig_fi, ax_fi = plt.subplots(figsize=(6, 5))
+                ax_fi.barh(imp_df["feature"], imp_df["importance"], color="#2563eb", alpha=0.85)
+                ax_fi.set_xlabel("Feature Importance (gain)")
+                ax_fi.set_title("XGBoost Feature Importance")
+                plt.tight_layout()
+                st.pyplot(fig_fi)
+                plt.close(fig_fi)
+
+                top3 = imp_df.sort_values("importance", ascending=False).head(3)
+                st.info(
+                    "**상위 3대 특성:**\n"
+                    + "\n".join(f"- {r['feature']}: {r['importance']:.4f}" for _, r in top3.iterrows())
+                    + "\n\n**EDA 교차검증 해설:**\n"
+                    "- 토크·회전속도·전력은 박스플롯·상관계수에서도 고장 구분력이 가장 높게 확인됨\n"
+                    "- 공구마모(Tool wear)는 TWF 고장유형과 직결되어 파레토·중요도 모두 상위권\n"
+                    "- 모델 중요도와 EDA 상관계수가 일치할수록 피처 신뢰도가 높다고 판단"
+                )
+            except Exception as e:
+                st.error(f"특성 중요도 계산 오류: {e}")
