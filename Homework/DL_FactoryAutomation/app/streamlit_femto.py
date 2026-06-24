@@ -1,6 +1,6 @@
 """
 Streamlit 앱 — FEMTO-ST 베어링 예지보전 (ML+DL 통합 진단)
-이은주 ML 방식(열화 분류) + LSTM RUL 예측 결합 시스템
+ML만 적용시(열화 분류) + LSTM RUL 예측 결합 시스템
 """
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ st.set_page_config(
     layout="wide",
 )
 st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL 통합 진단")
-st.caption("이은주 ML(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
+st.caption("ML만 적용시(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
 
 # ── 사이드바: 진단 설정 ────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ 진단 설정")

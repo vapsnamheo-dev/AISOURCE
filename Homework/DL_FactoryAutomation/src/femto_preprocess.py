@@ -1,7 +1,7 @@
 # ════════════════════════════════════════════════════════════════════
 # [역할] FEMTO-ST 베어링 데이터 전처리 — 피처 추출, VIF 분석, 열화 라벨 생성
 # [단계] [1] 데이터 로딩 → 피처 추출 → VIF 분석 → 라벨 생성 → 저장
-# [작업 메모] 이은주 ML 방식(h_rms × 2.5 임계값) + VIF 기반 피처 선택 적용.
+# [작업 메모] ML만 적용시 기준(h_rms × 2.5 임계값) + VIF 기반 피처 선택 적용.
 #   데이터 없을 시 generate_synthetic_femto() 로 demo mode 자동 전환.
 # ════════════════════════════════════════════════════════════════════
 """FEMTO-ST PRONOSTIA 베어링 예지보전 — 전처리 모듈.
@@ -276,7 +276,7 @@ def load_femto_data() -> tuple[pd.DataFrame, bool]:
         df_feat["bearing"] = bearing_name
         df_feat["split"] = split
 
-        # 이은주 방식: 초기 10분 h_rms 평균 × 2.5 = 열화 임계값
+        # ML만 적용시 기준: 초기 10분 h_rms 평균 × 2.5 = 열화 임계값
         init_10 = df_feat["h_rms"].iloc[:10].mean()
         threshold = init_10 * 2.5
         df_feat["threshold"] = threshold
