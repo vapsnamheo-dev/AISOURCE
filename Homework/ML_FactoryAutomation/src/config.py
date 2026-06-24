@@ -19,9 +19,9 @@ REPORTS_DIR.mkdir(exist_ok=True)
 RANDOM_STATE = 42
 TEST_SIZE = 0.2
 
-# 운영(서빙) 판정 임계값 — PR곡선상 F1 최적값(T*≈0.85): 재현율 유지 + 정밀도↑.
+# 운영(서빙) 판정 임계값 — PR곡선상 F1 최적값(T*=0.75): 재현율 0.809 유지 + 정밀도 0.833→0.932.
 # 평가/보고 지표는 표준 0.5 기준이며, 운영 기본값만 이 값을 사용한다(운영자 조정 가능).
-DECISION_THRESHOLD = 0.85
+DECISION_THRESHOLD = 0.75
 
 TARGET = "Target"
 # 식별자 + 누수(leakage) 컬럼 제거: Failure Type 은 Target 을 그대로 인코딩하므로 반드시 제외

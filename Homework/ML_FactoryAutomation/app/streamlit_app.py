@@ -87,12 +87,12 @@ with st.sidebar:
     # ── 판정 임계값 (운영 조정 가능) ──
     st.divider()
     st.subheader("⚙️ 판정 임계값")
-    # 기본값 0.85 = 현 프로젝트 F1 최적(T*≈0.85): 재현율(0.809) 유지 + 정밀도 0.833→0.932 (오경보↓)
-    DEFAULT_THRESHOLD = config.DECISION_THRESHOLD  # 단일 출처(config) = 0.85 (F1 최적)
+    # 기본값 0.75 = 현 프로젝트 F1 최적(T*=0.75): 재현율(0.809) 유지 + 정밀도 0.833→0.932 (오경보↓)
+    DEFAULT_THRESHOLD = config.DECISION_THRESHOLD  # 단일 출처(config) = 0.75 (F1 최적)
     threshold = st.slider(
         "고장 판정 임계값", 0.0, 1.0, DEFAULT_THRESHOLD, 0.01,
         help="고장 확률이 이 값 이상이면 '고장'으로 판정. 낮추면 재현율↑(놓침↓), "
-             "높이면 정밀도↑(오경보↓). 기본 0.85는 PR곡선상 F1 최적값.")
+             "높이면 정밀도↑(오경보↓). 기본 0.75는 PR곡선상 F1 최적값.")
     # 변경 이력 로깅 (운영 권장 흐름) — 데모는 세션 기록, 운영은 DB/로그 저장 권장
     if "thr_log" not in st.session_state:
         st.session_state.thr_log = []
@@ -352,7 +352,7 @@ with tab3:
             k3.metric("재현율", f"{xgb_m.get('recall', 0)*100:.1f}%")
             k4.metric("F1", f"{xgb_m.get('f1', 0)*100:.1f}%")
             k5.metric("ROC-AUC", f"{xgb_m.get('roc_auc', 0):.4f}")
-            st.caption("※ XGBoost (임계값 0.5 기준 평가지표 · 운영 임계값 T*=0.85)")
+            st.caption("※ XGBoost (임계값 0.5 기준 평가지표 · 운영 임계값 T*=0.75)")
 
             col_a, col_b = st.columns(2)
 
@@ -395,12 +395,12 @@ with tab3:
             st.info(
                 f"- **최고 F1 모델**: {best_name} (F1={best_f1:.4f})\n"
                 f"- XGBoost 재현율 {xgb_rec*100:.1f}% — 고장 10건 중 약 {xgb_rec*10:.0f}건 탐지\n"
-                f"- 운영 임계값 T*=0.85 적용 시 정밀도 상승(오경보↓), 재현율은 0.5 기준 대비 유지\n"
+                f"- 운영 임계값 T*=0.75 적용 시 정밀도 상승(오경보↓), 재현율은 0.5 기준 대비 유지\n"
                 f"- 불균형 데이터(정상:{train_df[config.TARGET].value_counts().get(0,'?')} vs 고장:{train_df[config.TARGET].value_counts().get(1,'?')})에 scale_pos_weight 적용"
                 if not train_df.empty else
                 f"- **최고 F1 모델**: {best_name} (F1={best_f1:.4f})\n"
                 f"- XGBoost 재현율 {xgb_rec*100:.1f}% — 고장 10건 중 약 {xgb_rec*10:.0f}건 탐지\n"
-                f"- 운영 임계값 T*=0.85 적용 시 정밀도 상승(오경보↓)")
+                f"- 운영 임계값 T*=0.75 적용 시 정밀도 상승(오경보↓)")
 
     # ── 서브탭 2: 고장유형 파레토 ─────────────────────────────
     with d2:
