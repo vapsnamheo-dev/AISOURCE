@@ -1,6 +1,6 @@
-{
+﻿{
   "v1": {
-    "label": "데이터1 (Data 1) — 기초 합성 데이터",
+    "label": "데이터1 (Data 1) -- 기초 합성 데이터",
     "description": "AI4I 2020 물리 규칙 기반 합성 시계열, 노이즈 없음",
     "total_runs": 6000,
     "train": 4800,
@@ -12,15 +12,21 @@
     "features": 9,
     "seq_len": 50,
     "generated_at": "2026-06-24",
+    "timing": {
+      "data_generation_min": 1,
+      "training_min_estimated": 30,
+      "test_inference_sec": 1,
+      "note": "v1 학습 시각 미기록 (세션 이전)"
+    },
     "dl_result": {
       "cv3_accuracy": 0.9998,
       "test_accuracy": 1.0,
       "test_f1": 1.0,
-      "note": "노이즈 없는 완벽한 합성 데이터로 100% 달성 — 현실성 낮음"
+      "note": "노이즈 없는 완벽한 합성 데이터로 100% 달성 -- 현실성 낮음"
     }
   },
   "v2": {
-    "label": "데이터2 (Data 2) — 노이즈 포함 대용량 데이터",
+    "label": "데이터2 (Data 2) -- 노이즈 포함 대용량 데이터",
     "description": "AI4I 물리 규칙 + 가우시안 7.5% 계측 노이즈, 10배 대용량",
     "total_runs": 60000,
     "train": 48000,
@@ -32,6 +38,55 @@
     "features": 9,
     "seq_len": 50,
     "generated_at": "2026-06-24",
+    "timing": {
+      "data_generation_start": "2026-06-24T20:22:43",
+      "data_generation_min": 3,
+      "training_start": "2026-06-24T20:26:19",
+      "training_estimated_hr": 6,
+      "cpu_seconds_at_check": 13602,
+      "note": "CPU 전용 (TF >= 2.11 Windows 네이티브 GPU 미지원), 50에폭 x CV3"
+    },
     "dl_result": null
+  },
+  "source3_milling": {
+    "label": "Source 3 -- NASA UC Berkeley Milling",
+    "description": "실제 밀링 절삭 실험 원시신호 6채널",
+    "cuts_total": 167,
+    "cuts_valid": 146,
+    "segments": 9782,
+    "train_segments": 7825,
+    "test_segments": 1957,
+    "window": 512,
+    "step": 128,
+    "channels": 6,
+    "label_threshold_mm": 0.2,
+    "worn_ratio_train": 0.658,
+    "generated_at": "2026-06-24",
+    "timing": {
+      "download_start": "2026-06-24T21:03:07",
+      "download_min": 1,
+      "preprocess_min": 2,
+      "rf_training_min": 5,
+      "cnn_training_min": 16,
+      "total_min": 25,
+      "note": "첫 실행 em-dash 인코딩 오류 (cp949), 수정 후 재실행"
+    },
+    "ml_result": {
+      "model": "RandomForest (n_estimators=300, class_weight=balanced)",
+      "features": "48 handcrafted (RMS/peak/std/kurtosis/skew/IQR/FFT per 6ch)",
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "note": "FAILED -- 전처리 문제로 Worn 클래스 0% 탐지"
+    },
+    "dl_result": {
+      "model": "1D-CNN (Conv1D x3 + BN + GAP)",
+      "params": 177217,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "note": "FAILED -- AUC=0.5 (랜덤 수준), RF와 동일한 실패 패턴",
+      "diagnosis": "confusion_matrix [[670,0],[1287,0]], Worn 예측 전무. 슬라이딩 윈도우 레이블 또는 정규화 문제 추정"
+    }
   }
 }
