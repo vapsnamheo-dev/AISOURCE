@@ -1,0 +1,16 @@
+﻿__pycache__/
+*.py[cod]
+.venv/
+.env
+models/*.keras
+models/*.h5
+models/*.npz
+models/*.json
+.pytest_cache/
+.ruff_cache/
+
+# 개별 시퀀스 CSV (NPZ로 통합됨)
+data/train/*.csv
+data/test/*.csv
+
+# demo CSV는 Streamlit 시연용으로 포함 (data/demo/*.csv 는 추적)
