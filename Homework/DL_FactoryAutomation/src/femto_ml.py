@@ -138,79 +138,106 @@ def train_and_evaluate(
 ) -> tuple[dict, dict]:
     """GroupKFold + GridSearchCV로 모델을 학습하고 평가 결과를 반환한다.
 
+    train split으로 GroupKFold CV, test split으로 out-of-sample 최종 평가.
+
     Returns
     -------
-    (results, best_models): {모델명: 지표dict}, {모델명: 학습완료모델}
+    (results, best_models, scaler)
     """
-    # 라벨 인코딩 (베어링 그룹)
-    le = LabelEncoder()
-    groups = le.fit_transform(df["bearing"])
+    df_train = df[df["split"] == "train"].copy()
+    df_test  = df[df["split"] == "test"].copy()
 
-    X = df[features].fillna(df[features].median()).values
-    y = df["label"].values
+    print(f"[데이터 분리] train={len(df_train)}행({df_train['bearing'].nunique()}개 베어링)  "
+          f"test={len(df_test)}행({df_test['bearing'].nunique()}개 베어링)")
+
+    le = LabelEncoder()
+    groups_tr = le.fit_transform(df_train["bearing"])
+
+    def _safe_fill(frame: pd.DataFrame, cols: list[str]) -> np.ndarray:
+        out = frame[cols].copy()
+        for c in cols:
+            med = out[c].median()
+            out[c] = out[c].fillna(med if np.isfinite(med) else 0.0)
+        return out.values.astype(np.float64)
+
+    X_tr = _safe_fill(df_train, features)
+    y_tr = df_train["label"].values
+    X_te = _safe_fill(df_test, features)
+    y_te = df_test["label"].values
 
     scaler = StandardScaler()
-    X_scaled = scaler.fit_transform(X)
+    X_tr_sc = scaler.fit_transform(X_tr)
+    X_te_sc = scaler.transform(X_te)
 
-    cv = GroupKFold(n_splits=3)
+    n_splits = min(3, len(df_train["bearing"].unique()))
+    cv = GroupKFold(n_splits=n_splits)
     results = {}
     best_models = {}
 
     for name, model, param_grid in build_models_and_params():
         print(f"\n[학습] {name} GridSearchCV 중...")
-
-        # LogisticRegression은 스케일링 데이터 사용, 트리 계열은 원본
-        X_input = X_scaled if name == "LogisticRegression" else X
+        X_tr_in = X_tr_sc if name == "LogisticRegression" else X_tr
+        X_te_in = X_te_sc if name == "LogisticRegression" else X_te
 
         grid = GridSearchCV(
-            model,
-            param_grid,
-            cv=cv,
-            scoring="recall",
-            n_jobs=-1,
-            refit=True,
+            model, param_grid,
+            cv=cv, scoring="recall", n_jobs=-1, refit=True,
         )
-        grid.fit(X_input, y, groups=groups)
+        grid.fit(X_tr_in, y_tr, groups=groups_tr)
         best_model = grid.best_estimator_
 
-        # 전체 데이터로 최종 예측 (교차검증 예측 집계)
-        y_pred_proba = np.zeros(len(y))
-        y_pred = np.zeros(len(y), dtype=int)
-
-        best_cls = grid.best_estimator_.__class__
+        # CV 성능 (train 내부)
+        y_cv_proba = np.zeros(len(y_tr))
+        y_cv_pred  = np.zeros(len(y_tr), dtype=int)
+        best_cls = best_model.__class__
         best_params = grid.best_params_
-        for train_idx, val_idx in cv.split(X_input, y, groups):
+        for tr_idx, val_idx in cv.split(X_tr_in, y_tr, groups_tr):
             m = best_cls(**best_params)
-            m.fit(X_input[train_idx], y[train_idx])
-            proba = m.predict_proba(X_input[val_idx])[:, 1]
-            y_pred_proba[val_idx] = proba
-            y_pred[val_idx] = (proba >= 0.5).astype(int)
+            m.fit(X_tr_in[tr_idx], y_tr[tr_idx])
+            proba = m.predict_proba(X_tr_in[val_idx])[:, 1]
+            y_cv_proba[val_idx] = proba
+            y_cv_pred[val_idx] = (proba >= 0.5).astype(int)
 
-        cm = confusion_matrix(y, y_pred).tolist()
-        try:
-            auc = float(roc_auc_score(y, y_pred_proba))
-        except Exception:
-            auc = float("nan")
+        # Out-of-sample 성능 (test 베어링)
+        oos_proba = best_model.predict_proba(X_te_in)[:, 1]
+        oos_pred  = (oos_proba >= 0.5).astype(int)
+
+        def _metrics(y_true, y_pred, y_proba):
+            try:
+                auc = float(roc_auc_score(y_true, y_proba))
+            except Exception:
+                auc = float("nan")
+            return {
+                "accuracy":  round(float(accuracy_score(y_true, y_pred)), 4),
+                "precision": round(float(precision_score(y_true, y_pred, zero_division=0)), 4),
+                "recall":    round(float(recall_score(y_true, y_pred, zero_division=0)), 4),
+                "f1":        round(float(f1_score(y_true, y_pred, zero_division=0)), 4),
+                "roc_auc":   round(auc, 4),
+                "confusion_matrix": confusion_matrix(y_true, y_pred).tolist(),
+            }
+
+        cv_metrics  = _metrics(y_tr, y_cv_pred, y_cv_proba)
+        oos_metrics = _metrics(y_te, oos_pred,  oos_proba)
+        oos_metrics["best_params"] = grid.best_params_
 
         results[name] = {
-            "accuracy": round(float(accuracy_score(y, y_pred)), 4),
-            "precision": round(float(precision_score(y, y_pred, zero_division=0)), 4),
-            "recall": round(float(recall_score(y, y_pred, zero_division=0)), 4),
-            "f1": round(float(f1_score(y, y_pred, zero_division=0)), 4),
-            "roc_auc": round(auc, 4),
-            "confusion_matrix": cm,
+            "cv":  cv_metrics,
+            "oos": oos_metrics,
+            # 최종 보고 지표 = OOS (out-of-sample)
+            "recall":  oos_metrics["recall"],
+            "f1":      oos_metrics["f1"],
+            "roc_auc": oos_metrics["roc_auc"],
             "best_params": grid.best_params_,
         }
         best_models[name] = best_model
 
         print(f"  최적 파라미터: {grid.best_params_}")
-        print(f"  Recall={results[name]['recall']:.4f}  F1={results[name]['f1']:.4f}  AUC={auc:.4f}")
+        print(f"  CV  → Recall={cv_metrics['recall']:.4f}  F1={cv_metrics['f1']:.4f}  AUC={cv_metrics['roc_auc']:.4f}")
+        print(f"  OOS → Recall={oos_metrics['recall']:.4f}  F1={oos_metrics['f1']:.4f}  AUC={oos_metrics['roc_auc']:.4f}")
 
-        # Feature importance 추출 (RF/XGB)
         if hasattr(best_model, "feature_importances_"):
             imp = best_model.feature_importances_
-            imp_dict = {f: round(float(v), 6) for f, v in zip(features, imp)}
-            results[name]["feature_importance"] = imp_dict
+            results[name]["feature_importance"] = {f: round(float(v), 6) for f, v in zip(features, imp)}
 
     return results, best_models, scaler
 

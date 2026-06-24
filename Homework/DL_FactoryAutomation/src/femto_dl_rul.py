@@ -100,7 +100,11 @@ def make_sequences(
 
     for bearing, bdf in df.groupby("bearing"):
         bdf = bdf.sort_values("minute").reset_index(drop=True)
-        feat_vals = bdf[features].fillna(bdf[features].median()).values
+        feat_frame = bdf[features].copy()
+        for _c in features:
+            _med = feat_frame[_c].median()
+            feat_frame[_c] = feat_frame[_c].fillna(_med if np.isfinite(_med) else 0.0)
+        feat_vals = feat_frame.values.astype(np.float64)
         rul_vals = bdf["rul"].values
         group_id = bdf["group_id"].iloc[0]
 
@@ -305,57 +309,81 @@ def run() -> None:
         print(f"[오류] 데이터 부족 (최소 {WINDOW_SIZE + 5}행 필요) → 전처리 재실행 필요")
         return
 
-    # 1. 시퀀스 생성
-    print(f"\n[시퀀스 생성] 윈도우={WINDOW_SIZE}분")
-    X, y_rul, groups = make_sequences(df, features, window=WINDOW_SIZE)
-    print(f"  시퀀스 수: {len(X)}, 피처 수: {X.shape[2]}, y 범위: [{y_rul.min():.0f}, {y_rul.max():.0f}]분")
+    # 1. train/test 분리
+    df_train = df[df["split"] == "train"].copy()
+    df_test  = df[df["split"] == "test"].copy()
+    print(f"[데이터 분리] train={df_train['bearing'].nunique()}개 베어링  "
+          f"test={df_test['bearing'].nunique()}개 베어링")
 
-    if len(X) == 0:
-        print("[오류] 시퀀스 생성 실패 — 베어링당 데이터 부족")
+    # 2. 시퀀스 생성 (train만 학습용)
+    print(f"\n[시퀀스 생성] 윈도우={WINDOW_SIZE}")
+    X_tr, y_tr, groups_tr = make_sequences(df_train, features, window=WINDOW_SIZE)
+    X_te, y_te, _         = make_sequences(df_test,  features, window=WINDOW_SIZE)
+    print(f"  train 시퀀스: {len(X_tr)}  test 시퀀스: {len(X_te)}")
+    print(f"  y train 범위: [{y_tr.min():.0f}, {y_tr.max():.0f}]  "
+          f"y test 범위: [{y_te.min():.0f}, {y_te.max():.0f}]")
+
+    if len(X_tr) == 0:
+        print("[오류] train 시퀀스 없음 — 전처리 재확인 필요")
         return
 
-    # 2. 스케일링
-    n_samples, window, n_feat = X.shape
+    # 3. 스케일링 (train fit, test transform)
+    n_feat = X_tr.shape[2]
     seq_scaler = MinMaxScaler()
-    X_2d = X.reshape(-1, n_feat)
-    X_scaled_2d = seq_scaler.fit_transform(X_2d)
-    X_scaled = X_scaled_2d.reshape(n_samples, window, n_feat)
+    X_tr_sc = seq_scaler.fit_transform(X_tr.reshape(-1, n_feat)).reshape(X_tr.shape)
+    X_te_sc = seq_scaler.transform(X_te.reshape(-1, n_feat)).reshape(X_te.shape) if len(X_te) else X_te
 
     y_scaler = MinMaxScaler()
-    y_scaled = y_scaler.fit_transform(y_rul.reshape(-1, 1)).flatten()
+    y_tr_sc = y_scaler.fit_transform(y_tr.reshape(-1, 1)).flatten()
+    y_te_sc = y_scaler.transform(y_te.reshape(-1, 1)).flatten() if len(y_te) else y_te
 
-    # 3. RF 베이스라인
+    y_range_tr = float(y_tr.max() - y_tr.min()) if len(y_tr) else 1.0
+
+    # 4. RF 베이스라인 (train GroupKFold CV → test OOS 평가)
     print("\n[RF 베이스라인] 학습 중...")
-    rf_model, rf_rmse_scaled, rf_mae_scaled = train_rf_baseline(
-        X_scaled, y_scaled, groups
-    )
-    # 원래 스케일로 변환
-    rf_rmse = float(rf_rmse_scaled * (y_rul.max() - y_rul.min()))
-    rf_mae = float(rf_mae_scaled * (y_rul.max() - y_rul.min()))
-    print(f"  RF RMSE (원래 단위): {rf_rmse:.2f}분  MAE: {rf_mae:.2f}분")
+    rf_model, rf_rmse_cv, rf_mae_cv = train_rf_baseline(X_tr_sc, y_tr_sc, groups_tr)
+    rf_rmse_cv = float(rf_rmse_cv * y_range_tr)
+    rf_mae_cv  = float(rf_mae_cv * y_range_tr)
 
-    # 4. LSTM
+    # RF OOS (test 베어링)
+    if len(X_te_sc):
+        rf_oos_proba = rf_model.predict(X_te_sc[:, -1, :])
+        y_te_orig = y_scaler.inverse_transform(y_te_sc.reshape(-1, 1)).flatten()
+        rf_oos_pred_orig = y_scaler.inverse_transform(rf_oos_proba.reshape(-1, 1)).flatten()
+        rf_rmse_oos = float(np.sqrt(np.mean((y_te_orig - rf_oos_pred_orig) ** 2)))
+        rf_mae_oos  = float(np.mean(np.abs(y_te_orig - rf_oos_pred_orig)))
+        print(f"  RF CV  RMSE={rf_rmse_cv:.1f}  OOS RMSE={rf_rmse_oos:.1f} 스냅샷")
+    else:
+        rf_rmse_oos, rf_mae_oos = rf_rmse_cv, rf_mae_cv
+
+    # 5. LSTM (train → test OOS)
     print("\n[LSTM] 학습 중...")
-    lstm_model, lstm_rmse_scaled, lstm_mae_scaled, history = train_lstm(
-        X_scaled, y_scaled, groups
-    )
-    lstm_rmse = float(lstm_rmse_scaled * (y_rul.max() - y_rul.min())) if np.isfinite(lstm_rmse_scaled) else float("nan")
-    lstm_mae = float(lstm_mae_scaled * (y_rul.max() - y_rul.min())) if np.isfinite(lstm_mae_scaled) else float("nan")
-    if np.isfinite(lstm_rmse):
-        print(f"  LSTM RMSE (원래 단위): {lstm_rmse:.2f}분  MAE: {lstm_mae:.2f}분")
+    lstm_model, lstm_rmse_sc, lstm_mae_sc, history = train_lstm(X_tr_sc, y_tr_sc, groups_tr)
+    lstm_rmse_cv = float(lstm_rmse_sc * y_range_tr) if np.isfinite(lstm_rmse_sc) else float("nan")
+    lstm_mae_cv  = float(lstm_mae_sc  * y_range_tr) if np.isfinite(lstm_mae_sc)  else float("nan")
 
-    # 5. 저장
+    # LSTM OOS
+    if lstm_model is not None and len(X_te_sc):
+        lstm_oos_sc = lstm_model.predict(X_te_sc, verbose=0).flatten()
+        lstm_oos_orig = y_scaler.inverse_transform(lstm_oos_sc.reshape(-1, 1)).flatten()
+        lstm_rmse_oos = float(np.sqrt(np.mean((y_te_orig - lstm_oos_orig) ** 2)))
+        lstm_mae_oos  = float(np.mean(np.abs(y_te_orig - lstm_oos_orig)))
+        print(f"  LSTM CV  RMSE={lstm_rmse_cv:.1f}  OOS RMSE={lstm_rmse_oos:.1f} 스냅샷")
+    else:
+        lstm_rmse_oos, lstm_mae_oos = lstm_rmse_cv, lstm_mae_cv
+
+    # 6. 저장
     save_results(
         rf_model, lstm_model, seq_scaler, y_scaler,
-        rf_rmse, rf_mae, lstm_rmse, lstm_mae, history
+        rf_rmse_oos, rf_mae_oos, lstm_rmse_oos, lstm_mae_oos, history
     )
 
-    # 6. 결과 요약
-    print("\n[결과 요약]")
-    print(f"  RF  RMSE={rf_rmse:.2f}분  MAE={rf_mae:.2f}분")
-    if np.isfinite(lstm_rmse):
-        improvement = (rf_rmse - lstm_rmse) / rf_rmse * 100 if rf_rmse > 0 else float("nan")
-        print(f"  LSTM RMSE={lstm_rmse:.2f}분  MAE={lstm_mae:.2f}분")
+    # 7. 결과 요약
+    print("\n[결과 요약 - Out-of-Sample (Full_Test_Set)]")
+    print(f"  RF   RMSE={rf_rmse_oos:.1f}  MAE={rf_mae_oos:.1f} 스냅샷")
+    if np.isfinite(lstm_rmse_oos):
+        improvement = (rf_rmse_oos - lstm_rmse_oos) / rf_rmse_oos * 100 if rf_rmse_oos > 0 else float("nan")
+        print(f"  LSTM RMSE={lstm_rmse_oos:.1f}  MAE={lstm_mae_oos:.1f} 스냅샷")
         if np.isfinite(improvement):
             print(f"  LSTM 개선률: {improvement:+.1f}% vs RF 베이스라인")
 

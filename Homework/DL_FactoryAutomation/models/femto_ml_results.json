@@ -1,0 +1,170 @@
+{
+  "LogisticRegression": {
+    "cv": {
+      "accuracy": 0.965,
+      "precision": 0.9394,
+      "recall": 0.1751,
+      "f1": 0.2952,
+      "roc_auc": 0.8796,
+      "confusion_matrix": [
+        [
+          4050,
+          2
+        ],
+        [
+          146,
+          31
+        ]
+      ]
+    },
+    "oos": {
+      "accuracy": 0.9871,
+      "precision": 0.7553,
+      "recall": 0.8897,
+      "f1": 0.8171,
+      "roc_auc": 0.9969,
+      "confusion_matrix": [
+        [
+          15261,
+          149
+        ],
+        [
+          57,
+          460
+        ]
+      ],
+      "best_params": {
+        "C": 0.01
+      }
+    },
+    "recall": 0.8897,
+    "f1": 0.8171,
+    "roc_auc": 0.9969,
+    "best_params": {
+      "C": 0.01
+    }
+  },
+  "RandomForest": {
+    "cv": {
+      "accuracy": 0.9716,
+      "precision": 1.0,
+      "recall": 0.322,
+      "f1": 0.4872,
+      "roc_auc": 0.9986,
+      "confusion_matrix": [
+        [
+          4052,
+          0
+        ],
+        [
+          120,
+          57
+        ]
+      ]
+    },
+    "oos": {
+      "accuracy": 0.9839,
+      "precision": 0.9962,
+      "recall": 0.5048,
+      "f1": 0.6701,
+      "roc_auc": 0.9204,
+      "confusion_matrix": [
+        [
+          15409,
+          1
+        ],
+        [
+          256,
+          261
+        ]
+      ],
+      "best_params": {
+        "max_depth": null,
+        "min_samples_leaf": 1,
+        "n_estimators": 100
+      }
+    },
+    "recall": 0.5048,
+    "f1": 0.6701,
+    "roc_auc": 0.9204,
+    "best_params": {
+      "max_depth": null,
+      "min_samples_leaf": 1,
+      "n_estimators": 100
+    },
+    "feature_importance": {
+      "h_rms": 0.516573,
+      "h_kurt": 0.225532,
+      "h_skew": 0.031393,
+      "h_crest": 0.051894,
+      "v_rms": 0.156544,
+      "v_kurt": 0.004187,
+      "v_skew": 0.002965,
+      "v_crest": 0.010912,
+      "temp_mean": 0.0
+    }
+  },
+  "XGBoost": {
+    "cv": {
+      "accuracy": 0.9955,
+      "precision": 1.0,
+      "recall": 0.8927,
+      "f1": 0.9433,
+      "roc_auc": 0.995,
+      "confusion_matrix": [
+        [
+          4052,
+          0
+        ],
+        [
+          19,
+          158
+        ]
+      ]
+    },
+    "oos": {
+      "accuracy": 0.9841,
+      "precision": 0.9962,
+      "recall": 0.5126,
+      "f1": 0.6769,
+      "roc_auc": 0.7582,
+      "confusion_matrix": [
+        [
+          15409,
+          1
+        ],
+        [
+          252,
+          265
+        ]
+      ],
+      "best_params": {
+        "learning_rate": 0.05,
+        "max_depth": 3,
+        "n_estimators": 100,
+        "scale_pos_weight": 1
+      }
+    },
+    "recall": 0.5126,
+    "f1": 0.6769,
+    "roc_auc": 0.7582,
+    "best_params": {
+      "learning_rate": 0.05,
+      "max_depth": 3,
+      "n_estimators": 100,
+      "scale_pos_weight": 1
+    },
+    "feature_importance": {
+      "h_rms": 0.941297,
+      "h_kurt": 0.007963,
+      "h_skew": 0.007887,
+      "h_crest": 0.006997,
+      "v_rms": 0.006742,
+      "v_kurt": 0.008238,
+      "v_skew": 0.013288,
+      "v_crest": 0.007589,
+      "temp_mean": 0.0
+    }
+  },
+  "_best_model": "LogisticRegression"
+}

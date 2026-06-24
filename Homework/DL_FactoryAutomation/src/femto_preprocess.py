@@ -35,17 +35,30 @@ FEMTO_DIR = ROOT / "data" / "FEMTO"
 PROCESSED_DIR = ROOT / "data" / "FEMTO_processed"
 PROCESSED_DIR.mkdir(parents=True, exist_ok=True)
 
-# FEMTO 베어링 목록 (학습/테스트 분리)
+# FEMTO 베어링 목록 (학습/데모/테스트 분리)
+# 조건(Condition)별 1개씩 훈련, 1개씩 Demo 제외, Full_Test_Set 전체 검증
 TRAIN_BEARINGS = [
-    ("Learning_set", "Bearing1_1", "train"),
-    ("Learning_set", "Bearing1_2", "train"),
-    ("Learning_set", "Bearing1_3", "train"),
+    ("Learning_set", "Bearing1_1", "train"),   # Condition 1: 1800rpm 4kN
+    ("Learning_set", "Bearing2_1", "train"),   # Condition 2: 1650rpm 4.2kN
+    ("Learning_set", "Bearing3_1", "train"),   # Condition 3: 1500rpm 5kN
+]
+DEMO_BEARINGS = [
+    ("Learning_set", "Bearing1_2", "demo"),
+    ("Learning_set", "Bearing2_2", "demo"),
+    ("Learning_set", "Bearing3_2", "demo"),
 ]
 TEST_BEARINGS = [
-    ("Test_set", "Bearing1_4", "test"),
-    ("Test_set", "Bearing1_5", "test"),
-    ("Test_set", "Bearing1_6", "test"),
-    ("Test_set", "Bearing1_7", "test"),
+    ("Full_Test_Set", "Bearing1_3", "test"),
+    ("Full_Test_Set", "Bearing1_4", "test"),
+    ("Full_Test_Set", "Bearing1_5", "test"),
+    ("Full_Test_Set", "Bearing1_6", "test"),
+    ("Full_Test_Set", "Bearing1_7", "test"),
+    ("Full_Test_Set", "Bearing2_3", "test"),
+    ("Full_Test_Set", "Bearing2_4", "test"),
+    ("Full_Test_Set", "Bearing2_5", "test"),
+    ("Full_Test_Set", "Bearing2_6", "test"),
+    ("Full_Test_Set", "Bearing2_7", "test"),
+    ("Full_Test_Set", "Bearing3_3", "test"),
 ]
 
 # 피처 목록 (수평+수직 채널)
@@ -254,49 +267,65 @@ def generate_synthetic_femto(n_bearings: int = 3, minutes_per_bearing: int = 100
 
 # ── 실제 FEMTO 데이터 로딩 ────────────────────────────────────────────────────
 
+def _load_bearing_list(
+    bearing_list: list[tuple[str, str, str]],
+) -> list[pd.DataFrame]:
+    """베어링 목록을 받아 피처 DataFrame 리스트를 반환한다."""
+    rows = []
+    for subset, bearing_name, split in bearing_list:
+        bearing_dir = FEMTO_DIR / subset / bearing_name
+        if not bearing_dir.exists():
+            print(f"  [건너뜀] {subset}/{bearing_name} 폴더 없음")
+            continue
+        df_feat = extract_bearing_features(bearing_dir)
+        if df_feat.empty:
+            continue
+        df_feat["bearing"] = bearing_name
+        df_feat["split"] = split
+        # ML만 적용시 기준: 초기 10개 스냅샷 h_rms 평균 × 2.5 = 열화 임계값
+        init_rms = df_feat["h_rms"].iloc[:10].mean()
+        threshold = init_rms * 2.5
+        df_feat["threshold"] = threshold
+        df_feat["label"] = (df_feat["h_rms"] > threshold).astype(int)
+        total_snap = len(df_feat)
+        df_feat["rul"] = total_snap - df_feat["minute"]
+        df_feat["rul_pct"] = (df_feat["rul"] / total_snap).clip(0, 1)
+        rows.append(df_feat)
+    return rows
+
+
 def load_femto_data() -> tuple[pd.DataFrame, bool]:
     """FEMTO-ST 데이터를 로딩한다. 없으면 합성 데이터 반환 (demo mode).
+
+    train / demo / test 세 가지 split 포함.
 
     Returns
     -------
     (DataFrame, is_synthetic)
     """
-    all_bearings = TRAIN_BEARINGS + TEST_BEARINGS
-    rows = []
+    all_rows = _load_bearing_list(TRAIN_BEARINGS + DEMO_BEARINGS + TEST_BEARINGS)
 
-    for subset, bearing_name, split in all_bearings:
-        bearing_dir = FEMTO_DIR / subset / bearing_name
-        if not bearing_dir.exists():
-            continue
-
-        df_feat = extract_bearing_features(bearing_dir)
-        if df_feat.empty:
-            continue
-
-        df_feat["bearing"] = bearing_name
-        df_feat["split"] = split
-
-        # ML만 적용시 기준: 초기 10분 h_rms 평균 × 2.5 = 열화 임계값
-        init_10 = df_feat["h_rms"].iloc[:10].mean()
-        threshold = init_10 * 2.5
-        df_feat["threshold"] = threshold
-        df_feat["label"] = (df_feat["h_rms"] > threshold).astype(int)
-
-        # RUL 계산
-        total_min = len(df_feat)
-        df_feat["rul"] = total_min - df_feat["minute"]
-        df_feat["rul_pct"] = (df_feat["rul"] / total_min).clip(0, 1)
-
-        rows.append(df_feat)
-
-    if not rows:
+    if not all_rows:
         print("[알림] FEMTO 데이터 없음 → 합성 데이터(demo mode) 사용")
         df_syn = generate_synthetic_femto(n_bearings=6, minutes_per_bearing=100)
         return df_syn, True
 
-    df = pd.concat(rows, ignore_index=True)
-    print(f"[FEMTO 실데이터] {df['bearing'].nunique()}개 베어링, {len(df)}행 로딩 완료")
+    df = pd.concat(all_rows, ignore_index=True)
+    n_train = df[df["split"] == "train"]["bearing"].nunique()
+    n_demo  = df[df["split"] == "demo"]["bearing"].nunique()
+    n_test  = df[df["split"] == "test"]["bearing"].nunique()
+    print(f"[FEMTO 실데이터] train={n_train}개  demo={n_demo}개  test={n_test}개  총 {len(df)}행")
     return df, False
+
+
+def save_demo_csv(df: pd.DataFrame) -> None:
+    """Demo 베어링 데이터를 CSV로 저장한다 (학습·테스트에 미사용)."""
+    demo_dir = ROOT / "demo data"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+    demo_df = df[df["split"] == "demo"].copy()
+    out = demo_dir / "femto_demo.csv"
+    demo_df.to_csv(out, index=False, encoding="utf-8")
+    print(f"[Demo 저장] {len(demo_df)}행 → {out}")
 
 
 # ── 메인 파이프라인 ────────────────────────────────────────────────────────────
@@ -336,11 +365,16 @@ def run() -> None:
     vif_df.to_csv(vif_path, index=False, encoding="utf-8")
     print(f"[저장] VIF 결과 → {vif_path}")
 
-    # 6. 요약
+    # 6. Demo CSV 저장
+    if not is_synthetic:
+        save_demo_csv(df)
+
+    # 7. 요약
     print("\n[요약]")
-    print(f"  베어링 수: {df['bearing'].nunique()}")
-    print(f"  전체 스냅샷: {len(df)}")
-    print(f"  열화(label=1): {df['label'].sum()} ({df['label'].mean()*100:.1f}%)")
+    for sp in ["train", "demo", "test"]:
+        sub = df[df["split"] == sp]
+        if len(sub):
+            print(f"  {sp:5s}: {sub['bearing'].nunique()}개 베어링  {len(sub)}행  열화율={sub['label'].mean()*100:.1f}%")
     print(f"  데이터 모드: {'합성(Demo)' if is_synthetic else '실제 FEMTO-ST'}")
     print("=" * 60)
 
