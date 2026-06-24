@@ -37,9 +37,11 @@ TEST_DIR   = DATA_DIR / "test"
 DEMO_DIR   = DATA_DIR / "demo"
 MODEL_DIR  = ROOT / "models"
 
-# ── 합성 데이터 생성 파라미터 ─────────────────────────────────────────────────
-SYNTH_TOTAL_RUNS  = 6000   # 전체 장비 가동 시퀀스 수 (train+test)
-DEMO_RUNS         = 200    # 데모 전용 시퀀스 (train/test에 미포함)
+# ── 합성 데이터 버전 관리 ─────────────────────────────────────────────────────
+DATA_VERSION      = "v2"    # 현재 사용 중인 데이터 버전
+NOISE_LEVEL       = 0.075   # 가우시안 노이즈 표준편차 비율 (0=없음, 0.075=7.5%)
+SYNTH_TOTAL_RUNS  = 60000  # 전체 장비 가동 시퀀스 수 (train+test), v1=6000
+DEMO_RUNS         = 500    # 데모 전용 시퀀스 (train/test에 미포함), v1=200
 SYNTH_FAILURE_RATE = 0.35  # 고장 발생 비율
 
 # ── 분류 임계값 ───────────────────────────────────────────────────────────────

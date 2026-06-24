@@ -1,0 +1,37 @@
+{
+  "v1": {
+    "label": "데이터1 (Data 1) — 기초 합성 데이터",
+    "description": "AI4I 2020 물리 규칙 기반 합성 시계열, 노이즈 없음",
+    "total_runs": 6000,
+    "train": 4800,
+    "test": 1200,
+    "demo": 200,
+    "failure_rate": 0.35,
+    "noise_level": 0.0,
+    "seed": 2026,
+    "features": 9,
+    "seq_len": 50,
+    "generated_at": "2026-06-24",
+    "dl_result": {
+      "cv3_accuracy": 0.9998,
+      "test_accuracy": 1.0,
+      "test_f1": 1.0,
+      "note": "노이즈 없는 완벽한 합성 데이터로 100% 달성 — 현실성 낮음"
+    }
+  },
+  "v2": {
+    "label": "데이터2 (Data 2) — 노이즈 포함 대용량 데이터",
+    "description": "AI4I 물리 규칙 + 가우시안 7.5% 계측 노이즈, 10배 대용량",
+    "total_runs": 60000,
+    "train": 48000,
+    "test": 12000,
+    "demo": 500,
+    "failure_rate": 0.35,
+    "noise_level": 0.075,
+    "seed": 2026,
+    "features": 9,
+    "seq_len": 50,
+    "generated_at": "2026-06-24",
+    "dl_result": null
+  }
+}

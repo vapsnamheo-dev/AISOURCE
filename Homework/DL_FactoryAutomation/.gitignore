@@ -5,7 +5,6 @@
 models/*.keras
 models/*.h5
 models/*.npz
-models/*.json
 .pytest_cache/
 .ruff_cache/
 

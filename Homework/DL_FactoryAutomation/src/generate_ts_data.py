@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.config import (
     SEQ_LEN, SYNTH_TOTAL_RUNS, DEMO_RUNS, SYNTH_FAILURE_RATE,
     TRAIN_DIR, TEST_DIR, DEMO_DIR, TEST_RATIO,
+    FEATURE_COLS, TARGET_COL, FAILURE_TYPE_COL,
+    DATA_DIR, NOISE_LEVEL, DATA_VERSION,
 )
 
 RNG = np.random.default_rng(2026)
@@ -177,29 +179,74 @@ def save_sequences(runs: list, out_dir: Path, prefix: str = "run"):
         df.to_csv(Path(out_dir) / f"{prefix}_{i:05d}.csv", index=False)
 
 
+_NOISE_COLS = [
+    "air_temp_k", "process_temp_k", "rotational_speed_rpm",
+    "torque_nm", "tool_wear_min", "power_w", "overstrain_minnm", "temp_diff_k",
+]
+
+
+def _apply_noise(df: pd.DataFrame, noise_level: float) -> pd.DataFrame:
+    """각 타임스텝 센서값에 가우시안 계측 노이즈 추가 (noise_level=표준편차 비율)."""
+    if noise_level <= 0:
+        return df
+    df = df.copy()
+    noise = RNG.normal(1.0, noise_level, size=(len(df), len(_NOISE_COLS)))
+    df[_NOISE_COLS] = df[_NOISE_COLS].values * noise
+    return df
+
+
+def _runs_to_arrays(runs: list) -> tuple:
+    """시퀀스 리스트 → (X, y_bin, y_multi) 배열 변환."""
+    X, y_bin, y_multi = [], [], []
+    for df in runs:
+        X.append(df[FEATURE_COLS].values.astype("float32"))
+        y_bin.append(int(df[TARGET_COL].iloc[-1]))
+        y_multi.append(int(df[FAILURE_TYPE_COL].iloc[-1]))
+    return (
+        np.stack(X).astype("float32"),
+        np.array(y_bin, dtype="int32"),
+        np.array(y_multi, dtype="int32"),
+    )
+
+
 def _print_summary(name: str, runs: list):
     n_fail = sum(int(r["failure"].iloc[-1]) for r in runs)
     print(f"  [{name}] {len(runs)}개 시퀀스 | 고장: {n_fail} ({n_fail/len(runs)*100:.1f}%)")
 
 
 def build_and_split():
-    print(f"총 {SYNTH_TOTAL_RUNS}개 시퀀스 생성 중...")
+    noise_tag = f"노이즈 {NOISE_LEVEL*100:.0f}%" if NOISE_LEVEL > 0 else "노이즈 없음"
+    print(f"[{DATA_VERSION}] 총 {SYNTH_TOTAL_RUNS}개 시퀀스 생성 중 ({noise_tag})...")
+
     all_runs = generate_dataset(SYNTH_TOTAL_RUNS, seed_offset=0)
+    if NOISE_LEVEL > 0:
+        all_runs = [_apply_noise(r, NOISE_LEVEL) for r in all_runs]
+
     n_test = int(SYNTH_TOTAL_RUNS * TEST_RATIO)
     train_runs = all_runs[n_test:]
-    test_runs = all_runs[:n_test]
+    test_runs  = all_runs[:n_test]
     print(f"  → train: {len(train_runs)}개 (80%), test: {len(test_runs)}개 (20%)")
-    save_sequences(train_runs, TRAIN_DIR, prefix="train")
-    save_sequences(test_runs, TEST_DIR, prefix="test")
 
-    print(f"데모 데이터 {DEMO_RUNS}개 생성 중 (별도 시드 9999, train/test와 겹치지 않음)...")
+    # NPZ로 직접 저장 (중간 CSV 없이, 60,000개 대용량 대응)
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    X_tr, y_tr_bin, y_tr_multi = _runs_to_arrays(train_runs)
+    np.savez_compressed(str(DATA_DIR / "train_data.npz"),
+                        X=X_tr, y_bin=y_tr_bin, y_multi=y_tr_multi)
+    X_te, y_te_bin, y_te_multi = _runs_to_arrays(test_runs)
+    np.savez_compressed(str(DATA_DIR / "test_data.npz"),
+                        X=X_te, y_bin=y_te_bin, y_multi=y_te_multi)
+
+    # 데모는 Streamlit용으로 개별 CSV 유지
+    print(f"데모 데이터 {DEMO_RUNS}개 생성 중 (시드 9999, train/test와 무관)...")
     demo_runs = generate_dataset(DEMO_RUNS, seed_offset=9999)
+    if NOISE_LEVEL > 0:
+        demo_runs = [_apply_noise(r, NOISE_LEVEL) for r in demo_runs]
     save_sequences(demo_runs, DEMO_DIR, prefix="demo")
 
     _print_summary("Train", train_runs)
     _print_summary("Test", test_runs)
     _print_summary("Demo", demo_runs)
-    print("\n완료: data/train, data/test, data/demo 저장됨")
+    print(f"\n완료: data/train_data.npz, data/test_data.npz, data/demo/ 저장됨 [{DATA_VERSION}]")
 
 
 if __name__ == "__main__":
