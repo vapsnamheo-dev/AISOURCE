@@ -480,13 +480,26 @@ with tab4:
                 "h_rms": h_rms, "h_kurt": h_kurt, "h_skew": h_skew, "h_crest": h_crest,
                 "v_rms": v_rms, "v_kurt": v_kurt, "v_skew": v_skew, "v_crest": v_crest,
                 "temp_mean": temp,
+                # 파생 피처 기본값 (selected_features에 포함될 수 있는 항목)
+                "energy": h_rms ** 2 + v_rms ** 2,
+                "health_idx": 1.0 / (1.0 + h_kurt + v_kurt),
+                "rms_ratio": h_rms / (v_rms + 1e-9),
             }
-            input_vals = np.array([[feature_values.get(f, 0.0) for f in features]])
+            # features가 비어 있을 때(전처리 캐시 초기화 전) 기본 피처 목록 사용
+            _feat_list = features if features else [
+                "h_rms", "h_kurt", "h_skew", "h_crest",
+                "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
+            ]
+            input_vals = np.array([[feature_values.get(f, 0.0) for f in _feat_list]])
 
             # ML 열화 판정
             try:
-                if ml_scaler is not None and len(features) == input_vals.shape[1]:
+                if ml_scaler is not None and input_vals.shape[1] > 0 and input_vals.shape[1] == ml_scaler.n_features_in_:
                     input_scaled = ml_scaler.transform(input_vals)
+                elif ml_scaler is not None and input_vals.shape[1] > 0:
+                    # 스케일러 피처 수 불일치 시 앞쪽 n개만 사용
+                    n = ml_scaler.n_features_in_
+                    input_scaled = ml_scaler.transform(input_vals[:, :n])
                 else:
                     input_scaled = input_vals
 
