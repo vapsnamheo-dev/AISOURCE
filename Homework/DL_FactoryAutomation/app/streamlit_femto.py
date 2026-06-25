@@ -404,7 +404,12 @@ with tab3:
         val_loss = history.get("val_loss", [])
 
         if train_loss:
-            st.subheader("LSTM 학습 곡선 (첫 Fold)")
+            st.subheader("LSTM 학습 곡선 — Fold 1 대표 (GroupKFold 5-Fold 중 1번째 분할)")
+            st.caption(
+                "📊 **Fold 1**: 전체 데이터를 5등분하여 첫 번째 그룹을 검증셋으로 사용한 분할. "
+                "5개 Fold 모두 표시하면 복잡해져 Fold 1만 시각화. "
+                "**성능 수치(RMSE/MAE)는 5-Fold 평균값.**"
+            )
             loss_df = pd.DataFrame({
                 "Epoch": list(range(1, len(train_loss) + 1)),
                 "Train Loss": train_loss,
