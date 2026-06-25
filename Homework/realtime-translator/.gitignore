@@ -1,0 +1,12 @@
+# 비밀키 — 절대 커밋 금지
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# 모델 캐시
+*.bin
