@@ -61,11 +61,14 @@ TEST_BEARINGS = [
     ("Full_Test_Set", "Bearing3_3", "test"),
 ]
 
-# 피처 목록 (수평+수직 채널)
+# 피처 목록 (수평+수직 채널 + 물리 파생 피처)
 FEATURE_COLS = [
     "h_rms", "h_kurt", "h_skew", "h_crest",
     "v_rms", "v_kurt", "v_skew", "v_crest",
     "temp_mean",
+    "energy",       # 파생: h_rms²+v_rms² (총 진동 에너지)
+    "health_idx",   # 파생: h_rms×h_kurt  (건강 지수 — 크기×충격성)
+    "rms_ratio",    # 파생: h_rms/v_rms   (방향 불균형)
 ]
 
 
@@ -194,9 +197,49 @@ def select_features_by_vif(vif_df: pd.DataFrame, threshold: float = 10.0) -> lis
     """VIF < threshold 인 피처만 선택한다."""
     selected = vif_df[vif_df["VIF"].fillna(threshold + 1) < threshold]["feature"].tolist()
     if not selected:
-        # 모두 제거되면 전체 유지 (안전장치)
         selected = vif_df["feature"].tolist()
         print("[경고] VIF 기준으로 모든 피처가 제거됨 → 전체 피처 유지")
+    return selected
+
+
+def select_features_by_correlation(
+    df: pd.DataFrame,
+    features: list[str],
+    threshold: float = 0.95,
+) -> list[str]:
+    """Pearson 상관계수 기반 중복 피처 제거 (|r| > threshold 쌍에서 label 상관 낮은 쪽 제거).
+
+    VIF가 다중공선성으로 NaN이 될 때 대체 피처 선택 방법으로 사용한다.
+    """
+    valid = [f for f in features if f in df.columns]
+    X = df[valid].copy()
+    for c in valid:
+        med = X[c].median()
+        X[c] = X[c].fillna(med if np.isfinite(med) else 0.0)
+
+    corr_mat = X.corr().abs()
+    label_corr = {}
+    if "label" in df.columns:
+        y = df["label"].values.astype(float)
+        for f in valid:
+            label_corr[f] = abs(float(np.corrcoef(X[f].values, y)[0, 1]))
+    else:
+        label_corr = {f: 1.0 for f in valid}
+
+    to_drop = set()
+    for i in range(len(valid)):
+        for j in range(i + 1, len(valid)):
+            fi, fj = valid[i], valid[j]
+            if corr_mat.loc[fi, fj] > threshold:
+                drop_candidate = fj if label_corr.get(fi, 0) >= label_corr.get(fj, 0) else fi
+                to_drop.add(drop_candidate)
+
+    selected = [f for f in valid if f not in to_drop]
+    if not selected:
+        selected = valid
+        print("[경고] 상관 기준으로 모든 피처 제거됨 → 전체 피처 유지")
+    else:
+        print(f"[Pearson 상관 선택] 제거 {len(to_drop)}개: {sorted(to_drop)}")
     return selected
 
 
@@ -282,6 +325,10 @@ def _load_bearing_list(
             continue
         df_feat["bearing"] = bearing_name
         df_feat["split"] = split
+        # 물리 파생 피처 (ML 프로젝트 방식 준용 — 베어링 도메인 특화)
+        df_feat["energy"]     = df_feat["h_rms"] ** 2 + df_feat["v_rms"] ** 2
+        df_feat["health_idx"] = df_feat["h_rms"] * df_feat["h_kurt"]
+        df_feat["rms_ratio"]  = df_feat["h_rms"] / (df_feat["v_rms"] + 1e-9)
         # ML만 적용시 기준: 초기 10개 스냅샷 h_rms 평균 × 2.5 = 열화 임계값
         init_rms = df_feat["h_rms"].iloc[:10].mean()
         threshold = init_rms * 2.5
@@ -348,9 +395,14 @@ def run() -> None:
     vif_df = compute_vif(df, FEATURE_COLS)
     print(vif_df.to_string(index=False))
 
-    # 4. VIF 기반 피처 선택
+    # 4. VIF 기반 피처 선택 (다중공선성으로 NaN이면 Pearson 상관으로 대체)
     selected = select_features_by_vif(vif_df, threshold=10.0)
-    print(f"\n[피처 선택] VIF<10 유지: {selected}")
+    all_nan = all(not np.isfinite(v) for v in vif_df["VIF"].values)
+    if all_nan:
+        print("[알림] VIF 전체 NaN → Pearson 상관(|r|>0.95) 기반 피처 선택으로 전환")
+        df_train_only = df[df["split"] == "train"]
+        selected = select_features_by_correlation(df_train_only, FEATURE_COLS, threshold=0.95)
+    print(f"\n[피처 선택] 최종 피처: {selected}")
 
     # 5. 저장
     out_path = PROCESSED_DIR / "femto_features.csv"
