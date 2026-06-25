@@ -176,6 +176,47 @@ MODEL_BUILDERS: dict[str, Callable] = {
 }
 
 
+# ── 학습 곡선 시각화 ──────────────────────────────────────────────────────────
+
+def _plot_training_curves(history, name: str, out_dir: Path) -> None:
+    """train/val Loss·MAE 곡선을 PNG로 저장."""
+    try:
+        import matplotlib
+        matplotlib.use("Agg")
+        import matplotlib.pyplot as plt
+
+        train_loss = history.history["loss"]
+        val_loss   = history.history["val_loss"]
+        train_mae  = history.history.get("mae", [])
+        val_mae    = history.history.get("val_mae", [])
+        epochs_range = range(1, len(train_loss) + 1)
+
+        fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+
+        axes[0].plot(epochs_range, train_loss, label="Training Loss",   color="steelblue")
+        axes[0].plot(epochs_range, val_loss,   label="Validation Loss", color="darkorange")
+        axes[0].set_title(f"{name} — Training & Validation Loss (MSE)")
+        axes[0].set_xlabel("Epoch"); axes[0].set_ylabel("Loss (MSE)")
+        axes[0].legend(loc="upper right"); axes[0].grid(True, alpha=0.3)
+
+        if train_mae:
+            axes[1].plot(epochs_range, train_mae, label="Training MAE",   color="steelblue")
+            axes[1].plot(epochs_range, val_mae,   label="Validation MAE", color="darkorange")
+            axes[1].set_title(f"{name} — Training & Validation MAE")
+            axes[1].set_xlabel("Epoch"); axes[1].set_ylabel("MAE")
+            axes[1].legend(loc="upper right"); axes[1].grid(True, alpha=0.3)
+        else:
+            axes[1].axis("off")
+
+        plt.tight_layout()
+        out_png = out_dir / f"femto_dl_{name}_training_curve.png"
+        plt.savefig(out_png, dpi=120, bbox_inches="tight")
+        plt.close(fig)
+        print(f"  [학습곡선] 저장 → {out_png.name}")
+    except Exception as exc:
+        print(f"  [학습곡선] 시각화 생략: {exc}")
+
+
 # ── 단일 모델 학습·평가 ────────────────────────────────────────────────────────
 
 def train_and_evaluate_model(
@@ -188,7 +229,8 @@ def train_and_evaluate_model(
     y_te_orig: np.ndarray,
     y_scaler: MinMaxScaler,
     y_range: float,
-) -> dict:
+) -> tuple[dict, object, object]:
+    """학습·평가 후 (metrics_dict, history, final_model) 반환."""
     import tensorflow as tf
 
     n_feat = X_tr.shape[2]
@@ -213,35 +255,40 @@ def train_and_evaluate_model(
     cv_rmse = float(np.sqrt(mean_squared_error(y_tr, y_pred_cv)) * y_range)
     cv_mae  = float(mean_absolute_error(y_tr, y_pred_cv) * y_range)
 
-    # 전체 train으로 최종 모델 재학습
+    # 전체 train으로 최종 모델 재학습 (history 보존)
     print(f"  [{name}] 최종 모델 재학습 중...")
     final_model = builder(window, n_feat)
     n_val = max(1, int(len(X_tr) * 0.1))
-    final_model.fit(
+    history = final_model.fit(
         X_tr[:-n_val], y_tr[:-n_val],
         validation_data=(X_tr[-n_val:], y_tr[-n_val:]),
         epochs=EPOCHS, batch_size=BATCH_SIZE,
-        callbacks=[tf.keras.callbacks.EarlyStopping(patience=PATIENCE, restore_best_weights=True)],
+        callbacks=[tf.keras.callbacks.EarlyStopping(
+            monitor="val_loss", patience=PATIENCE, restore_best_weights=True
+        )],
         verbose=0,
     )
 
     # OOS 평가
     if len(X_te):
-        oos_sc = final_model.predict(X_te, verbose=0).flatten()
+        oos_sc   = final_model.predict(X_te, verbose=0).flatten()
         oos_orig = y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten()
         oos_rmse = float(np.sqrt(mean_squared_error(y_te_orig, oos_orig)))
         oos_mae  = float(mean_absolute_error(y_te_orig, oos_orig))
     else:
         oos_rmse, oos_mae = cv_rmse, cv_mae
 
-    print(f"  [{name}] CV RMSE={cv_rmse:.1f}  OOS RMSE={oos_rmse:.1f} 스냅샷")
+    actual_epochs = len(history.history["loss"])
+    print(f"  [{name}] 실행에폭={actual_epochs}/{EPOCHS}  CV RMSE={cv_rmse:.1f}  OOS RMSE={oos_rmse:.1f}")
 
-    return {
-        "cv_rmse":  round(cv_rmse, 2),
-        "cv_mae":   round(cv_mae, 2),
-        "oos_rmse": round(oos_rmse, 2),
-        "oos_mae":  round(oos_mae, 2),
+    metrics = {
+        "cv_rmse":       round(cv_rmse, 2),
+        "cv_mae":        round(cv_mae, 2),
+        "oos_rmse":      round(oos_rmse, 2),
+        "oos_mae":       round(oos_mae, 2),
+        "actual_epochs": actual_epochs,
     }
+    return metrics, history, final_model
 
 
 # ── 메인 ─────────────────────────────────────────────────────────────────────
@@ -283,14 +330,19 @@ def run() -> None:
     ).flatten() if len(y_te) else np.array([])
 
     results: dict[str, dict] = {}
+    best_histories: dict[str, object] = {}
+    best_models:    dict[str, object] = {}
+
     for model_name, builder in MODEL_BUILDERS.items():
         try:
-            r = train_and_evaluate_model(
+            metrics, hist, mdl = train_and_evaluate_model(
                 model_name, builder,
                 X_tr_sc, y_tr_sc, groups_tr,
                 X_te_sc, y_te_orig, y_scaler, y_range,
             )
-            results[model_name] = r
+            results[model_name]        = metrics
+            best_histories[model_name] = hist
+            best_models[model_name]    = mdl
         except Exception as e:
             print(f"  [{model_name}] 오류: {e}")
             results[model_name] = {"oos_rmse": float("nan"), "error": str(e)}
@@ -300,8 +352,8 @@ def run() -> None:
     results["_best_model"] = best_model
 
     print("\n[아키텍처 비교 결과 - OOS RMSE (스냅샷 단위)]")
-    print(f"{'모델':<12} {'CV RMSE':>10} {'OOS RMSE':>10} {'OOS MAE':>10}")
-    print("-" * 44)
+    print(f"{'모델':<12} {'CV RMSE':>10} {'OOS RMSE':>10} {'OOS MAE':>10} {'실행에폭':>8}")
+    print("-" * 54)
     for name, r in results.items():
         if name.startswith("_"):
             continue
@@ -309,10 +361,50 @@ def run() -> None:
         cv_r  = r.get("cv_rmse", float("nan"))
         oos_r = r.get("oos_rmse", float("nan"))
         oos_m = r.get("oos_mae", float("nan"))
-        print(f"{name:<12} {cv_r:>10.1f} {oos_r:>10.1f} {oos_m:>10.1f}{marker}")
+        ep    = r.get("actual_epochs", "-")
+        print(f"{name:<12} {cv_r:>10.1f} {oos_r:>10.1f} {oos_m:>10.1f} {ep:>8}{marker}")
 
     if best_model:
         print(f"\n[최적 모델] {best_model}  OOS RMSE={valid[best_model]['oos_rmse']:.1f}")
+
+        # ── 학습 곡선 PNG 저장 (최적 모델)
+        if best_model in best_histories:
+            _plot_training_curves(best_histories[best_model], best_model, MODEL_DIR)
+
+        # ── 최적 모델 파일 저장
+        save_path = MODEL_DIR / f"femto_best_dl_{best_model}.keras"
+        try:
+            best_models[best_model].save(str(save_path))
+            print(f"[모델저장] {save_path.name}")
+        except Exception as e:
+            print(f"[모델저장] 실패: {e}")
+
+        # ── 저장된 모델 로드 → OOS 예측 시각화
+        print(f"\n[저장 모델 로드 후 OOS 예측] {save_path.name}")
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            loaded = tf.keras.models.load_model(str(save_path))
+            if len(X_te_sc):
+                pred_sc   = loaded.predict(X_te_sc, verbose=0).flatten()
+                pred_orig = y_scaler.inverse_transform(pred_sc.reshape(-1, 1)).flatten()
+                n_show    = min(200, len(y_te_orig))
+                fig, ax   = plt.subplots(figsize=(12, 4))
+                ax.plot(y_te_orig[:n_show], label="실제 RUL",  color="steelblue",  alpha=0.8)
+                ax.plot(pred_orig[:n_show], label="예측 RUL",  color="darkorange", alpha=0.8)
+                ax.set_title(f"{best_model} — 저장 모델 로드 후 OOS 예측 (첫 {n_show}개 샘플)")
+                ax.set_xlabel("샘플 인덱스"); ax.set_ylabel("RUL (분)")
+                ax.legend(); ax.grid(True, alpha=0.3)
+                pred_png = MODEL_DIR / f"femto_dl_{best_model}_oos_prediction.png"
+                plt.savefig(pred_png, dpi=120, bbox_inches="tight")
+                plt.close(fig)
+                oos_rmse_v = float(np.sqrt(mean_squared_error(y_te_orig, pred_orig)))
+                print(f"[예측결과] PNG → {pred_png.name}")
+                print(f"[로드모델 OOS RMSE] {oos_rmse_v:.2f}분")
+        except Exception as e:
+            print(f"[예측] 오류: {e}")
 
     out = MODEL_DIR / "femto_dl_compare_results.json"
     with open(out, "w", encoding="utf-8") as f:

@@ -12,9 +12,22 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import matplotlib
+matplotlib.rcParams["font.family"] = "Malgun Gothic"
+matplotlib.rcParams["axes.unicode_minus"] = False
+
 import numpy as np
 import pandas as pd
 import streamlit as st
+
+try:
+    import plotly.io as pio
+    _t = pio.templates["plotly_white"]
+    _t.layout.font.family = "Malgun Gothic, Apple Gothic, sans-serif"
+    pio.templates["korean"] = _t
+    pio.templates.default = "korean"
+except Exception:
+    pass
 
 # ── 경로 설정 ──────────────────────────────────────────────────────────────────
 ROOT = Path(__file__).resolve().parent.parent
@@ -117,6 +130,16 @@ def load_ml_model() -> tuple[object, object, dict]:
     return model, scaler, results
 
 
+@st.cache_data
+def load_dl_compare_results() -> dict:
+    """5종 DL 아키텍처 비교 결과를 로딩한다."""
+    path = MODEL_DIR / "femto_dl_compare_results.json"
+    if not path.exists():
+        return {}
+    with open(path, encoding="utf-8") as f:
+        return json.load(f)
+
+
 @st.cache_resource
 def load_rul_models() -> tuple[object, object, object, dict]:
     """RF RUL + LSTM + 스케일러 + 결과 JSON을 로딩한다."""
@@ -156,17 +179,19 @@ df, features = load_feature_data()
 vif_df = load_vif_results()
 ml_model, ml_scaler, ml_results = load_ml_model()
 rf_rul, lstm_rul, seq_scaler, y_scaler, rul_results = load_rul_models()
+dl_compare = load_dl_compare_results()
 
 # 데이터 없으면 경고
 if df.empty:
     st.warning("전처리 데이터 없음. 먼저 실행하세요: `python -m src.femto_preprocess`")
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4 = st.tabs([
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
     "📊 데이터 탐색",
     "🤖 ML 성능",
     "🔮 DL RUL 예측",
     "🏭 통합 진단 (실시간)",
+    "🔬 DL 아키텍처 비교 (5종)",
 ])
 
 # ════════════════════════════════════════════════════════
@@ -549,3 +574,133 @@ with tab4:
                     "Value": list(feature_values.values()),
                 })
                 st.dataframe(summary, use_container_width=True)
+
+
+# ════════════════════════════════════════════════════════
+# Tab 5: DL 아키텍처 비교 (5종)
+# ════════════════════════════════════════════════════════
+with tab5:
+    st.header("🔬 DL 아키텍처 비교 — LSTM / GRU / BiLSTM / 1D-CNN / CNN-LSTM")
+    st.caption(
+        "femto_dl_compare.py 결과: GroupKFold CV + OOS(Full_Test_Set) 평가 "
+        "| EarlyStopping(monitor=val_loss, patience=7) 적용"
+    )
+
+    if not dl_compare:
+        st.warning(
+            "비교 결과 없음. 먼저 실행하세요: `python -m src.femto_dl_compare`"
+        )
+    else:
+        best_model = dl_compare.get("_best_model", "")
+
+        # ── 성능 비교표 ─────────────────────────────────────────────────────────
+        st.subheader("5종 아키텍처 성능 비교 (OOS RMSE 기준)")
+
+        rows = []
+        for name, r in dl_compare.items():
+            if name.startswith("_"):
+                continue
+            rows.append({
+                "아키텍처": name,
+                "CV RMSE (분)": r.get("cv_rmse", "-"),
+                "OOS RMSE (분)": r.get("oos_rmse", "-"),
+                "OOS MAE (분)": r.get("oos_mae", "-"),
+                "실행 Epoch": r.get("actual_epochs", "-"),
+                "최적": "⭐ 최적" if name == best_model else "",
+            })
+
+        if rows:
+            cmp_df = pd.DataFrame(rows).set_index("아키텍처")
+            numeric_cols = ["CV RMSE (분)", "OOS RMSE (분)", "OOS MAE (분)"]
+            for c in numeric_cols:
+                cmp_df[c] = pd.to_numeric(cmp_df[c], errors="coerce")
+
+            try:
+                styled = cmp_df.style.highlight_min(
+                    subset=["OOS RMSE (분)"], color="#CCFFCC", axis=0
+                ).format("{:.1f}", subset=numeric_cols, na_rep="-")
+                st.dataframe(styled, use_container_width=True)
+            except Exception:
+                st.dataframe(cmp_df, use_container_width=True)
+
+            if best_model:
+                best_r = dl_compare.get(best_model, {})
+                col_a, col_b, col_c = st.columns(3)
+                col_a.metric("최적 아키텍처", best_model)
+                col_b.metric("OOS RMSE", f"{best_r.get('oos_rmse', '-')} 분")
+                col_c.metric("실행 Epoch",
+                             f"{best_r.get('actual_epochs', '-')} / 50 (EarlyStopping)")
+
+        st.divider()
+
+        # ── EarlyStopping 분석 ──────────────────────────────────────────────────
+        st.subheader("⏱️ EarlyStopping 효과 분석")
+        st.info(
+            "**설정**: monitor='val_loss', patience=7, restore_best_weights=True, max_epochs=50  \n"
+            "EarlyStopping이 발동하면 설정(50 epoch) 전에 자동 종료 → 과적합 방지 + 학습 시간 절약"
+        )
+
+        early_rows = []
+        for name, r in dl_compare.items():
+            if name.startswith("_"):
+                continue
+            actual = r.get("actual_epochs")
+            if actual is not None:
+                saved = 50 - int(actual)
+                early_rows.append({
+                    "아키텍처": name,
+                    "최대 Epoch": 50,
+                    "실행 Epoch": int(actual),
+                    "절약 Epoch": saved,
+                    "조기 종료": "✅ 발동" if saved > 0 else "⬜ 미발동",
+                })
+
+        if early_rows:
+            early_df = pd.DataFrame(early_rows).set_index("아키텍처")
+            st.dataframe(early_df, use_container_width=True)
+
+        st.divider()
+
+        # ── 학습 곡선 PNG ─────────────────────────────────────────────────────
+        st.subheader(f"📈 학습 곡선 — 최적 모델 ({best_model})")
+
+        curve_png = MODEL_DIR / f"femto_dl_{best_model}_training_curve.png"
+        if curve_png.exists():
+            st.image(str(curve_png), caption=f"{best_model} Training & Validation Loss·MAE",
+                     use_container_width=True)
+            st.caption(
+                "**해석**: Train Loss 계속 감소 + Val Loss 수렴 후 정체 → EarlyStopping 발동 지점에서 "
+                "최적 가중치(restore_best_weights=True) 복원. Val Loss가 상승 반전하면 과적합 시작."
+            )
+        else:
+            st.info(
+                f"학습 곡선 이미지 없음: `models/femto_dl_{best_model}_training_curve.png`  \n"
+                "`python -m src.femto_dl_compare` 실행 후 표시됩니다."
+            )
+
+        st.divider()
+
+        # ── OOS 예측 결과 PNG ─────────────────────────────────────────────────
+        st.subheader(f"🎯 저장 모델 로드 후 OOS 예측 결과 — {best_model}")
+
+        pred_png = MODEL_DIR / f"femto_dl_{best_model}_oos_prediction.png"
+        if pred_png.exists():
+            st.image(str(pred_png), caption=f"{best_model} — 실제 RUL vs 예측 RUL (OOS 첫 200 샘플)",
+                     use_container_width=True)
+            st.caption(
+                "**파란선**: 실제 RUL (분) · **주황선**: 저장 모델 로드 후 예측 RUL  \n"
+                "모델 파일: `models/femto_best_dl_{best_model}.keras`"
+            )
+        else:
+            st.info(
+                f"OOS 예측 이미지 없음: `models/femto_dl_{best_model}_oos_prediction.png`  \n"
+                "`python -m src.femto_dl_compare` 실행 후 표시됩니다."
+            )
+
+        # 저장 모델 파일 존재 여부 체크
+        keras_path = MODEL_DIR / f"femto_best_dl_{best_model}.keras"
+        if keras_path.exists():
+            size_mb = keras_path.stat().st_size / (1024 * 1024)
+            st.success(f"✅ 저장 모델 확인: `{keras_path.name}` ({size_mb:.2f} MB)")
+        else:
+            st.warning(f"저장 모델 없음: `models/femto_best_dl_{best_model}.keras`")
