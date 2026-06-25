@@ -1,0 +1,33 @@
+{
+  "LSTM": {
+    "cv_rmse": 1091.23,
+    "cv_mae": 947.29,
+    "oos_rmse": 1036.91,
+    "oos_mae": 846.21
+  },
+  "GRU": {
+    "cv_rmse": 1164.82,
+    "cv_mae": 1019.24,
+    "oos_rmse": 909.96,
+    "oos_mae": 741.5
+  },
+  "BiLSTM": {
+    "cv_rmse": 1301.63,
+    "cv_mae": 1113.67,
+    "oos_rmse": 1021.19,
+    "oos_mae": 805.53
+  },
+  "1D-CNN": {
+    "cv_rmse": 1093.23,
+    "cv_mae": 956.94,
+    "oos_rmse": 938.03,
+    "oos_mae": 754.87
+  },
+  "CNN-LSTM": {
+    "cv_rmse": 1168.68,
+    "cv_mae": 1019.86,
+    "oos_rmse": 996.61,
+    "oos_mae": 789.89
+  },
+  "_best_model": "GRU"
+}

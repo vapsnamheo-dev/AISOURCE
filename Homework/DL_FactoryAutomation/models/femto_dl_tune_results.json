@@ -1,0 +1,227 @@
+{
+  "model_name": "GRU",
+  "best_params": {
+    "window_size": 20,
+    "units": 32,
+    "dropout": 0.1
+  },
+  "best_oos_rmse": 956.05,
+  "grid_results": [
+    {
+      "window_size": 20,
+      "units": 32,
+      "dropout": 0.1,
+      "cv_rmse": 1184.99,
+      "oos_rmse": 956.05,
+      "oos_mae": 767.06
+    },
+    {
+      "window_size": 20,
+      "units": 32,
+      "dropout": 0.2,
+      "cv_rmse": 1150.27,
+      "oos_rmse": 979.42,
+      "oos_mae": 801.95
+    },
+    {
+      "window_size": 20,
+      "units": 32,
+      "dropout": 0.3,
+      "cv_rmse": 1207.6,
+      "oos_rmse": 1134.36,
+      "oos_mae": 908.05
+    },
+    {
+      "window_size": 20,
+      "units": 64,
+      "dropout": 0.1,
+      "cv_rmse": 1169.16,
+      "oos_rmse": 959.55,
+      "oos_mae": 771.82
+    },
+    {
+      "window_size": 20,
+      "units": 64,
+      "dropout": 0.2,
+      "cv_rmse": 1158.35,
+      "oos_rmse": 971.71,
+      "oos_mae": 771.47
+    },
+    {
+      "window_size": 20,
+      "units": 64,
+      "dropout": 0.3,
+      "cv_rmse": 1259.44,
+      "oos_rmse": 1051.66,
+      "oos_mae": 848.71
+    },
+    {
+      "window_size": 20,
+      "units": 128,
+      "dropout": 0.1,
+      "cv_rmse": 1186.72,
+      "oos_rmse": 1067.11,
+      "oos_mae": 854.55
+    },
+    {
+      "window_size": 20,
+      "units": 128,
+      "dropout": 0.2,
+      "cv_rmse": 1149.39,
+      "oos_rmse": 1015.52,
+      "oos_mae": 816.36
+    },
+    {
+      "window_size": 20,
+      "units": 128,
+      "dropout": 0.3,
+      "cv_rmse": 1173.94,
+      "oos_rmse": 1137.11,
+      "oos_mae": 903.68
+    },
+    {
+      "window_size": 30,
+      "units": 32,
+      "dropout": 0.1,
+      "cv_rmse": 1120.66,
+      "oos_rmse": 1018.81,
+      "oos_mae": 817.96
+    },
+    {
+      "window_size": 30,
+      "units": 32,
+      "dropout": 0.2,
+      "cv_rmse": 1135.9,
+      "oos_rmse": 1026.28,
+      "oos_mae": 829.12
+    },
+    {
+      "window_size": 30,
+      "units": 32,
+      "dropout": 0.3,
+      "cv_rmse": 1190.69,
+      "oos_rmse": 989.79,
+      "oos_mae": 785.9
+    },
+    {
+      "window_size": 30,
+      "units": 64,
+      "dropout": 0.1,
+      "cv_rmse": 1255.48,
+      "oos_rmse": 978.35,
+      "oos_mae": 784.12
+    },
+    {
+      "window_size": 30,
+      "units": 64,
+      "dropout": 0.2,
+      "cv_rmse": 1246.27,
+      "oos_rmse": 1035.73,
+      "oos_mae": 827.99
+    },
+    {
+      "window_size": 30,
+      "units": 64,
+      "dropout": 0.3,
+      "cv_rmse": 1122.0,
+      "oos_rmse": 1003.95,
+      "oos_mae": 803.99
+    },
+    {
+      "window_size": 30,
+      "units": 128,
+      "dropout": 0.1,
+      "cv_rmse": 1144.85,
+      "oos_rmse": 968.52,
+      "oos_mae": 780.1
+    },
+    {
+      "window_size": 30,
+      "units": 128,
+      "dropout": 0.2,
+      "cv_rmse": 1280.42,
+      "oos_rmse": 986.84,
+      "oos_mae": 788.08
+    },
+    {
+      "window_size": 30,
+      "units": 128,
+      "dropout": 0.3,
+      "cv_rmse": 1281.15,
+      "oos_rmse": 978.77,
+      "oos_mae": 793.01
+    },
+    {
+      "window_size": 50,
+      "units": 32,
+      "dropout": 0.1,
+      "cv_rmse": 1156.47,
+      "oos_rmse": 1141.67,
+      "oos_mae": 923.5
+    },
+    {
+      "window_size": 50,
+      "units": 32,
+      "dropout": 0.2,
+      "cv_rmse": 1213.05,
+      "oos_rmse": 1209.57,
+      "oos_mae": 994.43
+    },
+    {
+      "window_size": 50,
+      "units": 32,
+      "dropout": 0.3,
+      "cv_rmse": 1170.94,
+      "oos_rmse": 1155.1,
+      "oos_mae": 932.39
+    },
+    {
+      "window_size": 50,
+      "units": 64,
+      "dropout": 0.1,
+      "cv_rmse": 1150.2,
+      "oos_rmse": 1030.77,
+      "oos_mae": 820.08
+    },
+    {
+      "window_size": 50,
+      "units": 64,
+      "dropout": 0.2,
+      "cv_rmse": 1194.21,
+      "oos_rmse": 1045.4,
+      "oos_mae": 839.4
+    },
+    {
+      "window_size": 50,
+      "units": 64,
+      "dropout": 0.3,
+      "cv_rmse": 1173.35,
+      "oos_rmse": 1214.06,
+      "oos_mae": 967.23
+    },
+    {
+      "window_size": 50,
+      "units": 128,
+      "dropout": 0.1,
+      "cv_rmse": 1317.85,
+      "oos_rmse": 1021.41,
+      "oos_mae": 825.43
+    },
+    {
+      "window_size": 50,
+      "units": 128,
+      "dropout": 0.2,
+      "cv_rmse": 1301.54,
+      "oos_rmse": 979.08,
+      "oos_mae": 802.11
+    },
+    {
+      "window_size": 50,
+      "units": 128,
+      "dropout": 0.3,
+      "cv_rmse": 1176.46,
+      "oos_rmse": 1029.12,
+      "oos_mae": 815.77
+    }
+  ]
+}

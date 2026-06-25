@@ -1,0 +1,21 @@
+{
+  "version": "v2_improved",
+  "preprocessing": "raw_features_for_rf + per_segment_norm_for_cnn + focal_loss",
+  "ML_RandomForest": {
+    "accuracy": 0.342360756259581,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "roc_auc": 0.5,
+    "method": "RF(n=500,balanced) + 48 raw features + StandardScaler"
+  },
+  "DL_1DCNN": {
+    "accuracy": 0.657639243740419,
+    "precision": 0.657639243740419,
+    "recall": 1.0,
+    "f1": 0.7934648581997534,
+    "roc_auc": 0.5,
+    "method": "1D-CNN(GlobalMaxPool) + per-segment norm + Focal Loss",
+    "threshold": 0.5
+  }
+}
