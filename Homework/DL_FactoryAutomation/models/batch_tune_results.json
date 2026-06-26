@@ -1,0 +1,76 @@
+{
+  "femto_gru": {
+    "fixed_params": {
+      "window": 20,
+      "units": 32,
+      "dropout": 0.1,
+      "epochs": 50
+    },
+    "batch_results": [
+      {
+        "batch_size": 16,
+        "cv_rmse": 1065.13,
+        "oos_rmse": 836.6,
+        "oos_mae": 666.12,
+        "actual_epochs": 8
+      },
+      {
+        "batch_size": 32,
+        "cv_rmse": 1065.51,
+        "oos_rmse": 1002.56,
+        "oos_mae": 787.81,
+        "actual_epochs": 8
+      },
+      {
+        "batch_size": 128,
+        "cv_rmse": 1066.24,
+        "oos_rmse": 1054.33,
+        "oos_mae": 833.8,
+        "actual_epochs": 10
+      },
+      {
+        "batch_size": 64,
+        "cv_rmse": 1065.69,
+        "oos_rmse": 1114.39,
+        "oos_mae": 891.81,
+        "actual_epochs": 8
+      }
+    ],
+    "best_batch": 16,
+    "best_oos_rmse": 836.6,
+    "baseline_oos_rmse": 956.05
+  },
+  "milling_cnn": {
+    "fixed_params": {
+      "seq_len": 512,
+      "channels": 6,
+      "epochs": 50
+    },
+    "batch_results": [
+      {
+        "batch_size": 32,
+        "accuracy": 0.3424,
+        "f1": 0.0,
+        "roc_auc": 0.5,
+        "actual_epochs": 9
+      },
+      {
+        "batch_size": 64,
+        "accuracy": 0.3424,
+        "f1": 0.0,
+        "roc_auc": 0.5,
+        "actual_epochs": 9
+      },
+      {
+        "batch_size": 128,
+        "accuracy": 0.3424,
+        "f1": 0.0,
+        "roc_auc": 0.5,
+        "actual_epochs": 10
+      }
+    ],
+    "best_batch": 32,
+    "best_f1": 0.0,
+    "baseline_f1": 0.7935
+  }
+}

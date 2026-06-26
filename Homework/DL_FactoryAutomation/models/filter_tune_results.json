@@ -1,0 +1,40 @@
+{
+  "results": [
+    {
+      "label": "소형 32→64→128",
+      "filters": "32→64→128",
+      "params": 53473,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 9
+    },
+    {
+      "label": "기본 64→128→256",
+      "filters": "64→128→256",
+      "params": 176321,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 9
+    },
+    {
+      "label": "대형 128→256→512",
+      "filters": "128→256→512",
+      "params": 630913,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 10
+    }
+  ],
+  "best": {
+    "label": "소형 32→64→128",
+    "filters": "32→64→128",
+    "params": 53473,
+    "accuracy": 0.3424,
+    "f1": 0.0,
+    "roc_auc": 0.5,
+    "actual_epochs": 9
+  }
+}

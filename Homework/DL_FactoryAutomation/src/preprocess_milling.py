@@ -45,9 +45,10 @@ print(f"총 세그먼트: {len(X)}")
 print(f"  - 정상(0): {(y==0).sum()} ({(y==0).mean()*100:.1f}%)")
 print(f"  - 마모(1): {(y==1).sum()} ({(y==1).mean()*100:.1f}%)")
 
-# 80:20 분할 (cut 단위 누수 없게 stratify)
+# 80:20 분할 — shuffle=False로 시계열 순서 보존 (윈도우 섞임 누수 방지)
+# stratify는 shuffle=False와 함께 사용 불가 (sklearn 제약)
 X_tr, X_te, y_tr, y_te = train_test_split(
-    X, y, test_size=0.2, random_state=RANDOM, stratify=y
+    X, y, test_size=0.2, random_state=RANDOM, shuffle=False
 )
 
 # per-channel 표준화 (train 기준)
