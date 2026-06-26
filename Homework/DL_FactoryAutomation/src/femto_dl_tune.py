@@ -222,11 +222,23 @@ def evaluate_params(
 
     final_m = build_model(model_name, window, n_feat, units, dropout)
     n_val = max(1, int(len(X_tr_sc) * 0.1))
+    ckpt_path = str(MODEL_DIR / "femto_ckpt_tune.keras")
     final_m.fit(
         X_tr_sc[:-n_val], y_tr_sc[:-n_val],
         validation_data=(X_tr_sc[-n_val:], y_tr_sc[-n_val:]),
         epochs=EPOCHS, batch_size=BATCH_SIZE,
-        callbacks=[tf.keras.callbacks.EarlyStopping(patience=PATIENCE, restore_best_weights=True)],
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=PATIENCE, restore_best_weights=True
+            ),
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=ckpt_path,
+                monitor="val_loss",
+                save_best_only=True,   # val_loss 개선될 때만 덮어쓰기
+                mode="min",
+                verbose=1,
+            ),
+        ],
         verbose=0,
     )
 

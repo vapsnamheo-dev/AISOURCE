@@ -228,12 +228,24 @@ def train_lstm(
     print("  [최종] 전체 데이터로 최종 LSTM 학습 중...")
     final_model = build_lstm_model(X.shape[1], n_features)
     n_val = max(1, int(len(X) * 0.1))
+    ckpt_path = str(MODEL_DIR / "femto_ckpt_lstm.keras")
     final_model.fit(
         X[:-n_val], y[:-n_val],
         validation_data=(X[-n_val:], y[-n_val:]),
         epochs=epochs,
         batch_size=batch_size,
-        callbacks=[tf.keras.callbacks.EarlyStopping(patience=5, restore_best_weights=True)],
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=5, restore_best_weights=True
+            ),
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=ckpt_path,
+                monitor="val_loss",
+                save_best_only=True,   # val_loss 개선될 때만 덮어쓰기
+                mode="min",
+                verbose=1,
+            ),
+        ],
         verbose=0,
     )
 

@@ -278,13 +278,23 @@ def train_and_evaluate_model(
     print(f"  [{name}] 최종 모델 재학습 중...")
     final_model = builder(window, n_feat)
     n_val = max(1, int(len(X_tr) * 0.1))
+    ckpt_path = str(MODEL_DIR / f"femto_ckpt_{name}.keras")
     history = final_model.fit(
         X_tr[:-n_val], y_tr[:-n_val],
         validation_data=(X_tr[-n_val:], y_tr[-n_val:]),
         epochs=EPOCHS, batch_size=BATCH_SIZE,
-        callbacks=[tf.keras.callbacks.EarlyStopping(
-            monitor="val_loss", patience=PATIENCE, restore_best_weights=True
-        )],
+        callbacks=[
+            tf.keras.callbacks.EarlyStopping(
+                monitor="val_loss", patience=PATIENCE, restore_best_weights=True
+            ),
+            tf.keras.callbacks.ModelCheckpoint(
+                filepath=ckpt_path,
+                monitor="val_loss",
+                save_best_only=True,   # val_loss 개선될 때만 덮어쓰기
+                mode="min",
+                verbose=1,
+            ),
+        ],
         verbose=0,
     )
 
