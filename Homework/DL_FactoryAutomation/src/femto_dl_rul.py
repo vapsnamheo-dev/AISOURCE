@@ -349,7 +349,9 @@ def run() -> None:
     if len(X_te_sc):
         rf_oos_proba = rf_model.predict(X_te_sc[:, -1, :])
         y_te_orig = y_scaler.inverse_transform(y_te_sc.reshape(-1, 1)).flatten()
-        rf_oos_pred_orig = y_scaler.inverse_transform(rf_oos_proba.reshape(-1, 1)).flatten()
+        rf_oos_pred_orig = np.clip(
+            y_scaler.inverse_transform(rf_oos_proba.reshape(-1, 1)).flatten(), 0, None
+        )
         rf_rmse_oos = float(np.sqrt(np.mean((y_te_orig - rf_oos_pred_orig) ** 2)))
         rf_mae_oos  = float(np.mean(np.abs(y_te_orig - rf_oos_pred_orig)))
         print(f"  RF CV  RMSE={rf_rmse_cv:.1f}  OOS RMSE={rf_rmse_oos:.1f} 스냅샷")
@@ -365,7 +367,9 @@ def run() -> None:
     # LSTM OOS
     if lstm_model is not None and len(X_te_sc):
         lstm_oos_sc = lstm_model.predict(X_te_sc, verbose=0).flatten()
-        lstm_oos_orig = y_scaler.inverse_transform(lstm_oos_sc.reshape(-1, 1)).flatten()
+        lstm_oos_orig = np.clip(
+            y_scaler.inverse_transform(lstm_oos_sc.reshape(-1, 1)).flatten(), 0, None
+        )
         lstm_rmse_oos = float(np.sqrt(np.mean((y_te_orig - lstm_oos_orig) ** 2)))
         lstm_mae_oos  = float(np.mean(np.abs(y_te_orig - lstm_oos_orig)))
         print(f"  LSTM CV  RMSE={lstm_rmse_cv:.1f}  OOS RMSE={lstm_rmse_oos:.1f} 스냅샷")

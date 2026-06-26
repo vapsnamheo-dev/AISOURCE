@@ -232,7 +232,9 @@ def evaluate_params(
 
     if len(X_te_sc):
         oos_sc    = final_m.predict(X_te_sc, verbose=0).flatten()
-        oos_orig  = y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten()
+        oos_orig  = np.clip(
+            y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten(), 0, None
+        )
         y_te_orig = y_scaler.inverse_transform(
             y_scaler.transform(y_te.reshape(-1, 1))
         ).flatten()

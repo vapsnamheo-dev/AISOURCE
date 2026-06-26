@@ -288,10 +288,12 @@ def train_and_evaluate_model(
         verbose=0,
     )
 
-    # OOS 평가
+    # OOS 평가 — RUL은 0 미만 불가이므로 clip 적용
     if len(X_te):
         oos_sc   = final_model.predict(X_te, verbose=0).flatten()
-        oos_orig = y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten()
+        oos_orig = np.clip(
+            y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten(), 0, None
+        )
         oos_rmse = float(np.sqrt(mean_squared_error(y_te_orig, oos_orig)))
         oos_mae  = float(mean_absolute_error(y_te_orig, oos_orig))
     else:

@@ -181,7 +181,9 @@ def train_and_evaluate(
     # OOS 평가 — y_scaler.inverse_transform으로 분 단위 복원 후 RMSE 계산
     if len(X_te_sc):
         oos_sc   = final_m.predict(X_te_sc, verbose=0).flatten()
-        oos_orig = y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten()
+        oos_orig = np.clip(
+            y_scaler.inverse_transform(oos_sc.reshape(-1, 1)).flatten(), 0, None
+        )
         oos_rmse = float(np.sqrt(mean_squared_error(y_te_orig, oos_orig)))
         oos_mae  = float(mean_absolute_error(y_te_orig, oos_orig))
     else:
