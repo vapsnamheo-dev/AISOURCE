@@ -45,10 +45,13 @@ print(f"총 세그먼트: {len(X)}")
 print(f"  - 정상(0): {(y==0).sum()} ({(y==0).mean()*100:.1f}%)")
 print(f"  - 마모(1): {(y==1).sum()} ({(y==1).mean()*100:.1f}%)")
 
-# 80:20 분할 — shuffle=False로 시계열 순서 보존 (윈도우 섞임 누수 방지)
-# stratify는 shuffle=False와 함께 사용 불가 (sklearn 제약)
+# 80:20 분할 — shuffle=True + stratify=y
+# 근거: Milling 각 레코드(절삭)는 독립 공정 실험(재료·이송속도·절삭깊이 조합 각각 다름).
+# 레코드 간 순서는 "열화 누적 흐름"이 아니므로 시계열 순서 보존 불필요.
+# 윈도우 내 512 타임스텝 시계열 특성은 X 텐서에 그대로 보존됨.
+# stratify=y로 train/test 클래스 비율 동일 유지 → 분포 불일치 방지.
 X_tr, X_te, y_tr, y_te = train_test_split(
-    X, y, test_size=0.2, random_state=RANDOM, shuffle=False
+    X, y, test_size=0.2, random_state=RANDOM, shuffle=True, stratify=y
 )
 
 # per-channel 표준화 (train 기준)

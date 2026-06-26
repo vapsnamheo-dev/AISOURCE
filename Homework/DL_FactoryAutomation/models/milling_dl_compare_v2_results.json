@@ -1,0 +1,59 @@
+{
+  "results": [
+    {
+      "model": "1D-CNN",
+      "note": "기존 구조·개선 학습설정",
+      "params": 176321,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 21,
+      "threshold": 0.75,
+      "lr": 0.0001,
+      "patience": 20
+    },
+    {
+      "model": "MLP",
+      "note": "기존 구조·개선 학습설정",
+      "params": 1722753,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 21,
+      "threshold": 0.75,
+      "lr": 0.0001,
+      "patience": 20
+    },
+    {
+      "model": "BiLSTM",
+      "note": "기존 구조·개선 학습설정",
+      "params": 59617,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 21,
+      "threshold": 0.75,
+      "lr": 0.0001,
+      "patience": 20
+    }
+  ],
+  "best": {
+    "model": "1D-CNN",
+    "note": "기존 구조·개선 학습설정",
+    "params": 176321,
+    "accuracy": 0.3424,
+    "f1": 0.0,
+    "roc_auc": 0.5,
+    "actual_epochs": 21,
+    "threshold": 0.75,
+    "lr": 0.0001,
+    "patience": 20
+  },
+  "settings": {
+    "lr": 0.0001,
+    "patience": 20,
+    "threshold": 0.75,
+    "seed": 2026,
+    "batch": 64
+  }
+}
