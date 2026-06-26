@@ -99,9 +99,13 @@ def _build_lstm(window: int, n_feat: int, units: int = 64, dropout: float = 0.2)
     m = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(window, n_feat)),
         tf.keras.layers.LSTM(units, return_sequences=True),
+        tf.keras.layers.LayerNormalization(),
         tf.keras.layers.Dropout(dropout),
         tf.keras.layers.LSTM(units // 2),
-        tf.keras.layers.Dense(16, activation="relu"),
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(1),
     ], name="LSTM")
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])
@@ -113,9 +117,13 @@ def _build_gru(window: int, n_feat: int, units: int = 64, dropout: float = 0.2):
     m = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(window, n_feat)),
         tf.keras.layers.GRU(units, return_sequences=True),
+        tf.keras.layers.LayerNormalization(),
         tf.keras.layers.Dropout(dropout),
         tf.keras.layers.GRU(units // 2),
-        tf.keras.layers.Dense(16, activation="relu"),
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(1),
     ], name="GRU")
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])
@@ -127,9 +135,13 @@ def _build_bilstm(window: int, n_feat: int, units: int = 64, dropout: float = 0.
     m = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(window, n_feat)),
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units, return_sequences=True)),
+        tf.keras.layers.LayerNormalization(),
         tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units // 2)),
-        tf.keras.layers.Dense(16, activation="relu"),
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(1),
     ], name="BiLSTM")
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])
@@ -141,11 +153,14 @@ def _build_cnn1d(window: int, n_feat: int, units: int = 64, dropout: float = 0.2
     m = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(window, n_feat)),
         tf.keras.layers.Conv1D(units, kernel_size=3, activation="relu", padding="same"),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling1D(pool_size=2),
         tf.keras.layers.Conv1D(units // 2, kernel_size=3, activation="relu", padding="same"),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.Dropout(dropout),
         tf.keras.layers.GlobalAveragePooling1D(),
         tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(1),
     ], name="CNN1D")
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])
@@ -157,10 +172,14 @@ def _build_cnn_lstm(window: int, n_feat: int, units: int = 64, dropout: float = 
     m = tf.keras.Sequential([
         tf.keras.layers.Input(shape=(window, n_feat)),
         tf.keras.layers.Conv1D(units, kernel_size=3, activation="relu", padding="same"),
+        tf.keras.layers.BatchNormalization(),
         tf.keras.layers.MaxPooling1D(pool_size=2),
         tf.keras.layers.Dropout(dropout),
         tf.keras.layers.LSTM(units // 2),
-        tf.keras.layers.Dense(16, activation="relu"),
+        tf.keras.layers.LayerNormalization(),
+        tf.keras.layers.BatchNormalization(),
+        tf.keras.layers.Dense(32, activation="relu"),
+        tf.keras.layers.Dropout(dropout),
         tf.keras.layers.Dense(1),
     ], name="CNN_LSTM")
     m.compile(optimizer=tf.keras.optimizers.Adam(1e-3), loss="mse", metrics=["mae"])

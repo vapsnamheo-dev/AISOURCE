@@ -72,48 +72,67 @@ def build_model(name: str, window: int, n_feat: int, units: int, dropout: float)
         m = tf.keras.Sequential([
             tf.keras.layers.Input(shape=(window, n_feat)),
             tf.keras.layers.LSTM(units, return_sequences=True),
+            tf.keras.layers.LayerNormalization(),
             tf.keras.layers.Dropout(dropout),
             tf.keras.layers.LSTM(units // 2),
-            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1),
         ])
     elif name == "GRU":
         m = tf.keras.Sequential([
             tf.keras.layers.Input(shape=(window, n_feat)),
             tf.keras.layers.GRU(units, return_sequences=True),
+            tf.keras.layers.LayerNormalization(),
             tf.keras.layers.Dropout(dropout),
             tf.keras.layers.GRU(units // 2),
-            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1),
         ])
     elif name == "BiLSTM":
         m = tf.keras.Sequential([
             tf.keras.layers.Input(shape=(window, n_feat)),
             tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units, return_sequences=True)),
+            tf.keras.layers.LayerNormalization(),
             tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units // 2)),
-            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1),
         ])
     elif name == "1D-CNN":
         m = tf.keras.Sequential([
             tf.keras.layers.Input(shape=(window, n_feat)),
             tf.keras.layers.Conv1D(units, kernel_size=3, activation="relu", padding="same"),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.MaxPooling1D(pool_size=2),
             tf.keras.layers.Conv1D(units // 2, kernel_size=3, activation="relu", padding="same"),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.Dropout(dropout),
             tf.keras.layers.GlobalAveragePooling1D(),
             tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1),
         ])
     else:  # CNN-LSTM
         m = tf.keras.Sequential([
             tf.keras.layers.Input(shape=(window, n_feat)),
             tf.keras.layers.Conv1D(units, kernel_size=3, activation="relu", padding="same"),
+            tf.keras.layers.BatchNormalization(),
             tf.keras.layers.MaxPooling1D(pool_size=2),
             tf.keras.layers.Dropout(dropout),
             tf.keras.layers.LSTM(units // 2),
-            tf.keras.layers.Dense(16, activation="relu"),
+            tf.keras.layers.LayerNormalization(),
+            tf.keras.layers.BatchNormalization(),
+            tf.keras.layers.Dense(32, activation="relu"),
+            tf.keras.layers.Dropout(dropout),
             tf.keras.layers.Dense(1),
         ])
 
