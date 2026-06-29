@@ -1,13 +1,13 @@
 feature,VIF,judgement
-h_rms,,데이터 부족
-h_kurt,,데이터 부족
-h_skew,,데이터 부족
-h_crest,,데이터 부족
-v_rms,,데이터 부족
-v_kurt,,데이터 부족
-v_skew,,데이터 부족
-v_crest,,데이터 부족
-temp_mean,,데이터 부족
-energy,,데이터 부족
-health_idx,,데이터 부족
-rms_ratio,,데이터 부족
+h_rms,6.23,주의(5~10)
+h_kurt,6.05,주의(5~10)
+h_skew,1.81,양호(<5)
+h_crest,3.94,양호(<5)
+v_rms,4.08,양호(<5)
+v_kurt,6.1,주의(5~10)
+v_skew,1.51,양호(<5)
+v_crest,5.76,주의(5~10)
+temp_mean,,제거권고(>=10)
+energy,3.01,양호(<5)
+health_idx,6.03,주의(5~10)
+rms_ratio,1.98,양호(<5)

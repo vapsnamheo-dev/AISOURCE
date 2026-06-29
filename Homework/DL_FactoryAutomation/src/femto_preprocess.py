@@ -386,9 +386,19 @@ def run() -> None:
     # 1. 데이터 로딩
     df, is_synthetic = load_femto_data()
 
-    # 2. 온도 결측 처리 (중앙값 대체)
+    # 2. 온도 결측 처리 — 선형 보간 (베어링별 시계열 연속성 보존)
+    # 온도는 시간에 따라 서서히 변하는 연속값이므로
+    # 전역 중앙값 대체보다 같은 베어링 내 선형 보간이 더 정확함
     if df["temp_mean"].isna().any():
-        df["temp_mean"] = df["temp_mean"].fillna(df["temp_mean"].median())
+        df = df.sort_values(["bearing", "minute"]).reset_index(drop=True)
+        df["temp_mean"] = (
+            df.groupby("bearing")["temp_mean"]
+            .transform(lambda s: s.interpolate(method="linear").bfill().ffill())
+        )
+        # 보간 후에도 남은 NaN은 중앙값 대체, 전체 NaN이면 0으로 처리
+        if df["temp_mean"].isna().any():
+            med = df["temp_mean"].median()
+            df["temp_mean"] = df["temp_mean"].fillna(med if pd.notna(med) else 0.0)
 
     # 3. VIF 분석
     print("\n[VIF 분석] 다중공선성 진단 중...")

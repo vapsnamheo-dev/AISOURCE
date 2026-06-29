@@ -87,7 +87,6 @@ with st.sidebar.expander("RUL 임계값 변경 이력"):
         st.write(f"- {ts} → {rv}분")
 
 st.sidebar.divider()
-st.sidebar.info("**실행 순서**\n1. `python -m src.femto_preprocess`\n2. `python -m src.femto_ml`\n3. `python -m src.femto_dl_rul`")
 
 
 # ── 캐시: 데이터 및 모델 로딩 ─────────────────────────────────────────────────
@@ -190,9 +189,9 @@ ml_model, ml_scaler, ml_results = load_ml_model()
 rf_rul, lstm_rul, seq_scaler, y_scaler, rul_results = load_rul_models()
 dl_compare = load_dl_compare_results()
 
-# 데이터 없으면 경고
+# 데이터 로딩 실패 시 (자동 전처리가 완료된 후에도 비어있으면 데이터 파일 문제)
 if df.empty:
-    st.warning("전처리 데이터 없음. 먼저 실행하세요: `python -m src.femto_preprocess`")
+    st.error("데이터 로딩 실패. 앱을 새로고침하세요.")
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
