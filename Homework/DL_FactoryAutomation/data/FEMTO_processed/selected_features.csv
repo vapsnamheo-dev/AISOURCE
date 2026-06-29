@@ -1,0 +1,13 @@
+feature
+h_rms
+h_kurt
+h_skew
+h_crest
+v_rms
+v_kurt
+v_skew
+v_crest
+temp_mean
+energy
+health_idx
+rms_ratio

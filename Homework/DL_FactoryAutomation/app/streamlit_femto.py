@@ -42,6 +42,15 @@ st.set_page_config(
 st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL 통합 진단")
 st.caption("ML만 적용시(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
 
+# ── Cloud 자동 전처리 ──────────────────────────────────────────────────────────
+import subprocess as _sp
+_feat_path = PROCESSED_DIR / "femto_features.csv"
+if not _feat_path.exists():
+    with st.spinner("⏳ 전처리 데이터 생성 중... (최초 1회, 약 1~2분)"):
+        _sp.run([sys.executable, "-m", "src.femto_preprocess"],
+                capture_output=True, cwd=str(ROOT))
+    st.rerun()
+
 # ── 사이드바: 진단 설정 ────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ 진단 설정")
 

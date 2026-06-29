@@ -1,0 +1,13 @@
+feature,VIF,judgement
+h_rms,,데이터 부족
+h_kurt,,데이터 부족
+h_skew,,데이터 부족
+h_crest,,데이터 부족
+v_rms,,데이터 부족
+v_kurt,,데이터 부족
+v_skew,,데이터 부족
+v_crest,,데이터 부족
+temp_mean,,데이터 부족
+energy,,데이터 부족
+health_idx,,데이터 부족
+rms_ratio,,데이터 부족

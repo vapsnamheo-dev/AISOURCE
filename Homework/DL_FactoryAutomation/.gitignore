@@ -5,6 +5,10 @@
 models/*.keras
 models/*.h5
 models/*.npz
+# femto 모델은 Cloud 배포를 위해 추적
+!models/femto_*.keras
+!models/femto_*.pkl
+!models/femto_*.json
 .pytest_cache/
 .ruff_cache/
 
