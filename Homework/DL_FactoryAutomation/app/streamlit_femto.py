@@ -42,14 +42,31 @@ st.set_page_config(
 st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL 통합 진단")
 st.caption("ML만 적용시(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
 
+# ── ML 프로젝트 링크 ──────────────────────────────────────────────────────────
+_col_link, _col_spacer = st.columns([1, 5])
+with _col_link:
+    st.link_button(
+        "🏭 ML 설비 진단 앱으로 →",
+        "https://mlfactoryautomation.streamlit.app/",
+        help="AI4I 제조 데이터 기반 ML 진단 앱 (CSV 업로드 판정 포함)",
+        use_container_width=True,
+    )
+
 # ── Cloud 자동 전처리 ──────────────────────────────────────────────────────────
 import subprocess as _sp
 _feat_path = PROCESSED_DIR / "femto_features.csv"
 if not _feat_path.exists():
-    with st.spinner("⏳ 전처리 데이터 생성 중... (최초 1회, 약 1~2분)"):
-        _sp.run([sys.executable, "-m", "src.femto_preprocess"],
-                capture_output=True, cwd=str(ROOT))
-    st.rerun()
+    _tried = st.session_state.get("_preprocess_tried", False)
+    if not _tried:
+        st.session_state["_preprocess_tried"] = True
+        with st.spinner("⏳ 전처리 데이터 생성 중... (최초 1회, 약 1~2분)"):
+            _sp.run([sys.executable, "-m", "src.femto_preprocess"],
+                    capture_output=True, cwd=str(ROOT))
+        st.cache_data.clear()
+        st.rerun()
+    else:
+        st.error("❌ 전처리 실패: femto_features.csv를 생성할 수 없습니다. 앱을 재시작하거나 관리자에게 문의하세요.")
+        st.stop()
 
 # ── 사이드바: 진단 설정 ────────────────────────────────────────────────────────
 st.sidebar.header("⚙️ 진단 설정")
@@ -92,14 +109,10 @@ st.sidebar.divider()
 # ── 캐시: 데이터 및 모델 로딩 ─────────────────────────────────────────────────
 
 @st.cache_data
-def load_feature_data() -> tuple[pd.DataFrame, list[str]]:
-    """전처리된 FEMTO 피처 데이터를 로딩한다."""
+def _load_features_cached() -> tuple[pd.DataFrame, list[str]]:
+    """파일이 존재할 때만 호출 — 캐시 대상."""
     feat_path = PROCESSED_DIR / "femto_features.csv"
     sel_path = PROCESSED_DIR / "selected_features.csv"
-
-    if not feat_path.exists():
-        return pd.DataFrame(), []
-
     df = pd.read_csv(feat_path)
     if sel_path.exists():
         features = pd.read_csv(sel_path)["feature"].tolist()
@@ -107,6 +120,13 @@ def load_feature_data() -> tuple[pd.DataFrame, list[str]]:
         features = ["h_rms", "h_kurt", "h_skew", "h_crest",
                     "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean"]
     return df, features
+
+
+def load_feature_data() -> tuple[pd.DataFrame, list[str]]:
+    """파일 존재 여부 확인 후 캐시 함수 호출 — 파일 없으면 캐시하지 않음."""
+    if not (PROCESSED_DIR / "femto_features.csv").exists():
+        return pd.DataFrame(), []
+    return _load_features_cached()
 
 
 @st.cache_data
@@ -189,9 +209,11 @@ ml_model, ml_scaler, ml_results = load_ml_model()
 rf_rul, lstm_rul, seq_scaler, y_scaler, rul_results = load_rul_models()
 dl_compare = load_dl_compare_results()
 
-# 데이터 로딩 실패 시 (자동 전처리가 완료된 후에도 비어있으면 데이터 파일 문제)
+# 데이터 로딩 실패 시 — st.stop()으로 이후 탭 렌더링 차단
 if df.empty:
-    st.error("데이터 로딩 실패. 앱을 새로고침하세요.")
+    st.error("❌ 데이터 로딩 실패. 앱을 새로고침(F5)하거나 잠시 후 다시 시도하세요.")
+    st.info("로컬 실행 시: `python -m src.femto_preprocess` 후 재시작")
+    st.stop()
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
