@@ -217,10 +217,10 @@ if df.empty:
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "📊 데이터 탐색",
+    "📊 데이터 탐색 (demo data loading)",
     "🤖 ML 성능",
     "🔮 DL RUL 예측",
-    "🏭 통합 진단 (실시간)",
+    "🏭 통합 진단 (실시간·CSV 진단)",
     "🔬 DL 아키텍처 비교 (5종)",
 ])
 
@@ -484,147 +484,257 @@ with tab3:
 
 
 # ════════════════════════════════════════════════════════
-# Tab 4: 통합 진단 (실시간)
+# ════════════════════════════════════════════════════════
+# Tab 4: 통합 진단 (실시간·CSV 진단)
 # ════════════════════════════════════════════════════════
 with tab4:
     st.header("🏭 통합 진단 — 실시간 베어링 상태 평가")
 
+    # ML+DL 통합 효과 설명 배너
+    with st.expander("ℹ️ ML+DL 통합 시스템이 PdM을 어떻게 강화하는가", expanded=False):
+        st.markdown("""
+**이 시스템 내 ML+DL 2단 진단의 효과**
+
+| 단계 | 모델 | 역할 | 강점 |
+|------|------|------|------|
+| 1단 | ML (LogisticRegression) | **이진 알람** — 지금 열화 중인가? | 빠름·경량·설명 가능 |
+| 2단 | DL (LSTM) | **정량 예측** — 잔여수명 몇 분? | 시계열 패턴 학습 |
+| **결합** | ML → DL | 열화 감지 + RUL 정량화 + 경보 발령 | 오경보↓·정보량↑ |
+
+> **ML만**: "고장 가능성 있음"
+> **ML+DL**: "열화 감지됨 + 잔여수명 약 47분 → 다음 교대조 전 교체 권장"
+
+**ML 과제(CNC 공작기계) + DL 과제(베어링 진동)의 통합 효과**
+
+| 시스템 | 대상 장비 | 고장 유형 |
+|--------|-----------|-----------|
+| ML 과제 (mlfactoryautomation.streamlit.app) | CNC 공작기계 (선삭·밀링) | 공구마모·열발산·전력과부하·오버스트레인 5종 |
+| DL 과제 (이 앱) | 회전기계 베어링 | 피로균열·표면마모 등 진동 기반 열화 |
+| **두 시스템 통합** | 제조 라인 전체 커버 | 가공 장비 + 회전체 = 스마트 팩토리 PdM 플랫폼 |
+
+두 시스템을 결합하면 **장비 유형별 전문 모델**로 제조 공정 전체의 예지보전이 가능합니다.
+        """)
+
     if ml_model is None:
         st.warning("ML 모델 없음. 먼저 실행하세요: `python -m src.femto_ml`")
     else:
-        st.subheader("진동 특성 직접 입력")
-        st.caption("현재 측정값을 입력하면 ML(열화 판정) + DL(잔여수명 예측)을 실시간으로 수행합니다.")
+        diag_sub1, diag_sub2 = st.tabs(["🎛️ 슬라이더 직접 입력", "📂 FEMTO CSV 파일 일괄 진단"])
 
-        col1, col2 = st.columns(2)
-        with col1:
-            h_rms = st.slider("h_rms (수평 진동 RMS)", 0.0, 10.0, 0.5, 0.01)
-            h_kurt = st.slider("h_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
-            h_skew = st.slider("h_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
-            h_crest = st.slider("h_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
-        with col2:
-            v_rms = st.slider("v_rms (수직 진동 RMS)", 0.0, 10.0, 0.45, 0.01)
-            v_kurt = st.slider("v_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
-            v_skew = st.slider("v_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
-            v_crest = st.slider("v_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
+        # ── Sub1: 슬라이더 직접 입력 ─────────────────────────────────────────────
+        with diag_sub1:
+            st.subheader("진동 특성 직접 입력")
+            st.caption("현재 측정값을 입력하면 ML(열화 판정) + DL(잔여수명 예측)을 실시간으로 수행합니다.")
 
-        temp = st.slider("온도 (°C)", 20.0, 80.0, 30.0, 0.5)
+            col1, col2 = st.columns(2)
+            with col1:
+                h_rms = st.slider("h_rms (수평 진동 RMS)", 0.0, 10.0, 0.5, 0.01)
+                h_kurt = st.slider("h_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
+                h_skew = st.slider("h_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
+                h_crest = st.slider("h_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
+            with col2:
+                v_rms = st.slider("v_rms (수직 진동 RMS)", 0.0, 10.0, 0.45, 0.01)
+                v_kurt = st.slider("v_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
+                v_skew = st.slider("v_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
+                v_crest = st.slider("v_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
 
-        if st.button("진단하기", type="primary"):
-            # 현재 입력값을 피처 순서에 맞게 정렬
-            feature_values = {
-                "h_rms": h_rms, "h_kurt": h_kurt, "h_skew": h_skew, "h_crest": h_crest,
-                "v_rms": v_rms, "v_kurt": v_kurt, "v_skew": v_skew, "v_crest": v_crest,
-                "temp_mean": temp,
-                # 파생 피처 기본값 (selected_features에 포함될 수 있는 항목)
-                "energy": h_rms ** 2 + v_rms ** 2,
-                "health_idx": 1.0 / (1.0 + h_kurt + v_kurt),
-                "rms_ratio": h_rms / (v_rms + 1e-9),
-            }
-            # features가 비어 있을 때(전처리 캐시 초기화 전) 기본 피처 목록 사용
-            _feat_list = features if features else [
-                "h_rms", "h_kurt", "h_skew", "h_crest",
-                "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
-            ]
-            input_vals = np.array([[feature_values.get(f, 0.0) for f in _feat_list]])
+            temp = st.slider("온도 (°C)", 20.0, 80.0, 30.0, 0.5)
 
-            # ML 열화 판정
-            try:
-                if ml_scaler is not None and input_vals.shape[1] > 0 and input_vals.shape[1] == ml_scaler.n_features_in_:
-                    input_scaled = ml_scaler.transform(input_vals)
-                elif ml_scaler is not None and input_vals.shape[1] > 0:
-                    # 스케일러 피처 수 불일치 시 앞쪽 n개만 사용
-                    n = ml_scaler.n_features_in_
-                    input_scaled = ml_scaler.transform(input_vals[:, :n])
-                else:
-                    input_scaled = input_vals
+            if st.button("진단하기", type="primary"):
+                feature_values = {
+                    "h_rms": h_rms, "h_kurt": h_kurt, "h_skew": h_skew, "h_crest": h_crest,
+                    "v_rms": v_rms, "v_kurt": v_kurt, "v_skew": v_skew, "v_crest": v_crest,
+                    "temp_mean": temp,
+                    "energy": h_rms ** 2 + v_rms ** 2,
+                    "health_idx": 1.0 / (1.0 + h_kurt + v_kurt),
+                    "rms_ratio": h_rms / (v_rms + 1e-9),
+                }
+                _feat_list = features if features else [
+                    "h_rms", "h_kurt", "h_skew", "h_crest",
+                    "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
+                ]
+                input_vals = np.array([[feature_values.get(f, 0.0) for f in _feat_list]])
 
-                proba = ml_model.predict_proba(input_scaled)[0][1]
-                pred = int(proba >= ml_threshold)
-            except Exception as e:
-                st.error(f"ML 예측 오류: {e}")
-                proba, pred = 0.0, 0
-
-            # DL RUL 예측 (30분 시퀀스 필요 → 단건 입력 시 상수 시퀀스로 근사)
-            predicted_rul = None
-            if rf_rul is not None:
                 try:
-                    # RF RUL: 마지막 타임스텝 피처
-                    if seq_scaler is not None:
-                        input_scaled_seq = seq_scaler.transform(input_vals)
-                    else:
-                        input_scaled_seq = input_vals
+                    n_sc = ml_scaler.n_features_in_ if ml_scaler is not None else input_vals.shape[1]
+                    X_sc = ml_scaler.transform(input_vals[:, :n_sc]) if ml_scaler is not None else input_vals
+                    proba = ml_model.predict_proba(X_sc)[0][1]
+                    pred = int(proba >= ml_threshold)
+                except Exception as e:
+                    st.error(f"ML 예측 오류: {e}")
+                    proba, pred = 0.0, 0
 
-                    rul_raw = rf_rul.predict(input_scaled_seq)[0]
-                    # 역스케일링
-                    if y_scaler is not None:
-                        predicted_rul = float(y_scaler.inverse_transform([[rul_raw]])[0][0])
-                    else:
-                        predicted_rul = float(rul_raw)
-                    predicted_rul = max(0.0, predicted_rul)
-                except Exception:
-                    predicted_rul = None
+                predicted_rul = None
+                if rf_rul is not None:
+                    try:
+                        sc_in = seq_scaler.transform(input_vals) if seq_scaler is not None else input_vals
+                        rul_raw = rf_rul.predict(sc_in)[0]
+                        predicted_rul = max(0.0, float(
+                            y_scaler.inverse_transform([[rul_raw]])[0][0]
+                            if y_scaler is not None else rul_raw
+                        ))
+                    except Exception:
+                        predicted_rul = None
 
-            # LSTM RUL (30타임스텝 상수 시퀀스 근사)
-            lstm_rul_pred = None
-            if lstm_rul is not None and seq_scaler is not None:
+                lstm_rul_pred = None
+                if lstm_rul is not None and seq_scaler is not None:
+                    try:
+                        seq_input = np.tile(input_vals, (30, 1))
+                        seq_sc = seq_scaler.transform(seq_input)[np.newaxis, :, :]
+                        rul_raw_l = lstm_rul.predict(seq_sc, verbose=0)[0][0]
+                        lstm_rul_pred = max(0.0, float(
+                            y_scaler.inverse_transform([[rul_raw_l]])[0][0]
+                            if y_scaler is not None else rul_raw_l
+                        ))
+                    except Exception:
+                        lstm_rul_pred = None
+
+                st.divider()
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.subheader("ML 열화 판정")
+                    st.metric("열화 확률", f"{proba * 100:.1f}%")
+                    if pred == 1:
+                        st.error(f"열화 감지 (P={proba:.2f} > 임계값 {ml_threshold:.2f})")
+                    else:
+                        st.success(f"정상 (P={proba:.2f} <= 임계값 {ml_threshold:.2f})")
+                    st.caption(f"임계값을 낮추면(현재 {ml_threshold:.2f}) 더 민감하게 감지합니다.")
+
+                with col_b:
+                    st.subheader("DL 잔여수명 예측")
+                    use_rul = lstm_rul_pred if lstm_rul_pred is not None else predicted_rul
+                    method = "LSTM" if lstm_rul_pred is not None else ("RF" if predicted_rul is not None else None)
+                    if use_rul is not None:
+                        st.metric("예측 잔여수명", f"{use_rul:.0f} 분", help=f"예측 방법: {method}")
+                        if use_rul <= rul_threshold:
+                            st.error(f"긴급 경보: 잔여수명 {use_rul:.0f}분 (기준 {rul_threshold}분 이하)")
+                        elif use_rul <= rul_threshold * 2:
+                            st.warning(f"주의: 잔여수명 {use_rul:.0f}분 (기준의 2배 이내)")
+                        else:
+                            st.success(f"양호: 잔여수명 {use_rul:.0f}분")
+                    else:
+                        st.info("DL 모델 미학습 — `python -m src.femto_dl_rul` 실행 후 사용 가능")
+
+                with st.expander("입력값 요약"):
+                    st.dataframe(
+                        pd.DataFrame({"Feature": list(feature_values.keys()),
+                                      "Value": list(feature_values.values())}),
+                        use_container_width=True,
+                    )
+
+        # ── Sub2: FEMTO CSV 파일 일괄 진단 ──────────────────────────────────────
+        with diag_sub2:
+            st.subheader("📂 FEMTO CSV 파일 일괄 진단")
+            st.caption(
+                "FEMTO-ST 피처 CSV (femto_features.csv 형식 또는 h_rms 등 컬럼 포함 파일)를 "
+                "업로드하면 각 행에 ML 열화 판정 + DL RUL 예측 결과를 추가하여 보여줍니다."
+            )
+            st.info(
+                "필수 컬럼: h_rms, h_kurt, h_skew, h_crest, v_rms, v_kurt, v_skew, v_crest  "
+                "| temp_mean / energy / health_idx / rms_ratio 없으면 자동 계산"
+            )
+
+            uploaded = st.file_uploader(
+                "FEMTO 피처 CSV 업로드",
+                type=["csv"],
+                key="femto_csv_upload",
+            )
+
+            if uploaded is not None:
                 try:
-                    seq_input = np.tile(input_vals, (30, 1))  # (30, n_feat)
-                    seq_input_scaled = seq_scaler.transform(seq_input)
-                    seq_input_3d = seq_input_scaled[np.newaxis, :, :]  # (1, 30, n_feat)
-                    rul_raw_lstm = lstm_rul.predict(seq_input_3d, verbose=0)[0][0]
-                    if y_scaler is not None:
-                        lstm_rul_pred = float(y_scaler.inverse_transform([[rul_raw_lstm]])[0][0])
+                    up_df = pd.read_csv(uploaded)
+                    st.write(f"로드된 데이터: {len(up_df):,}행 × {len(up_df.columns)}열")
+                    st.dataframe(up_df.head(3), use_container_width=True)
+
+                    REQUIRED = ["h_rms", "h_kurt", "h_skew", "h_crest",
+                                "v_rms", "v_kurt", "v_skew", "v_crest"]
+                    missing = [c for c in REQUIRED if c not in up_df.columns]
+                    if missing:
+                        st.error(f"필수 컬럼 없음: {missing}")
                     else:
-                        lstm_rul_pred = float(rul_raw_lstm)
-                    lstm_rul_pred = max(0.0, lstm_rul_pred)
-                except Exception:
-                    lstm_rul_pred = None
+                        if "temp_mean" not in up_df.columns:
+                            up_df["temp_mean"] = 0.0
+                        if "energy" not in up_df.columns:
+                            up_df["energy"] = up_df["h_rms"] ** 2 + up_df["v_rms"] ** 2
+                        if "health_idx" not in up_df.columns:
+                            up_df["health_idx"] = 1.0 / (1.0 + up_df["h_kurt"] + up_df["v_kurt"])
+                        if "rms_ratio" not in up_df.columns:
+                            up_df["rms_ratio"] = up_df["h_rms"] / (up_df["v_rms"] + 1e-9)
 
-            # 결과 표시
-            st.divider()
-            col_a, col_b = st.columns(2)
+                        _feat_list = features if features else REQUIRED + ["temp_mean"]
+                        X_up = up_df[[f for f in _feat_list if f in up_df.columns]].fillna(0).values
 
-            with col_a:
-                st.subheader("ML 열화 판정")
-                st.metric("열화 확률", f"{proba * 100:.1f}%")
-                if pred == 1:
-                    st.error(f"열화 감지 (P={proba:.2f} > 임계값 {ml_threshold:.2f})")
-                else:
-                    st.success(f"정상 (P={proba:.2f} <= 임계값 {ml_threshold:.2f})")
+                        if st.button("일괄 진단 실행", type="primary", key="batch_run"):
+                            with st.spinner("진단 중..."):
+                                try:
+                                    n_sc = ml_scaler.n_features_in_ if ml_scaler is not None else X_up.shape[1]
+                                    X_sc = ml_scaler.transform(X_up[:, :n_sc]) if ml_scaler is not None else X_up
+                                    probas = ml_model.predict_proba(X_sc)[:, 1]
+                                    preds = (probas >= ml_threshold).astype(int)
+                                except Exception as e:
+                                    st.error(f"ML 오류: {e}")
+                                    probas = np.zeros(len(up_df))
+                                    preds = np.zeros(len(up_df), dtype=int)
 
-                # 임계값 변경에 따른 판정 변화 안내
-                st.caption(
-                    f"임계값을 낮추면(현재 {ml_threshold:.2f}) 더 민감하게 감지합니다."
-                )
+                                rul_preds = np.full(len(up_df), np.nan)
+                                if rf_rul is not None:
+                                    try:
+                                        X_rsc = seq_scaler.transform(X_up) if seq_scaler is not None else X_up
+                                        raw_rul = rf_rul.predict(X_rsc)
+                                        if y_scaler is not None:
+                                            raw_rul = y_scaler.inverse_transform(
+                                                raw_rul.reshape(-1, 1)).flatten()
+                                        rul_preds = np.maximum(0, raw_rul)
+                                    except Exception:
+                                        pass
 
-            with col_b:
-                st.subheader("DL 잔여수명 예측")
-                use_rul = lstm_rul_pred if lstm_rul_pred is not None else predicted_rul
-                method = "LSTM" if lstm_rul_pred is not None else ("RF" if predicted_rul is not None else None)
+                            keep_cols = (["minute", "bearing"] + REQUIRED
+                                         if "bearing" in up_df.columns else REQUIRED)
+                            result_df = up_df[[c for c in keep_cols if c in up_df.columns]].copy()
+                            result_df["ML_열화확률(%)"] = (probas * 100).round(1)
+                            result_df["ML_판정"] = np.where(preds == 1, "열화", "정상")
+                            result_df["RF_RUL_분"] = np.where(
+                                np.isnan(rul_preds), "-",
+                                np.round(rul_preds).astype(int).astype(str),
+                            )
 
-                if use_rul is not None:
-                    st.metric("예측 잔여수명", f"{use_rul:.0f} 분", help=f"예측 방법: {method}")
-                    if use_rul <= rul_threshold:
-                        st.error(f"긴급 경보: 잔여수명 {use_rul:.0f}분 (기준 {rul_threshold}분 이하)")
-                    elif use_rul <= rul_threshold * 2:
-                        st.warning(f"주의: 잔여수명 {use_rul:.0f}분 (기준의 2배 이내)")
-                    else:
-                        st.success(f"양호: 잔여수명 {use_rul:.0f}분")
-                else:
-                    st.info("DL 모델 미학습 — `python -m src.femto_dl_rul` 실행 후 사용 가능")
-                    if pred == 0:
-                        st.info("정상 판정 → RUL 예측 불필요 (잔여 수명 충분)")
+                            def _row_color(row):
+                                c = "background-color: #FFDDDD" if row["ML_판정"] == "열화" else ""
+                                return [c] * len(row)
 
-            # 입력값 요약
-            with st.expander("입력값 요약"):
-                summary = pd.DataFrame({
-                    "Feature": list(feature_values.keys()),
-                    "Value": list(feature_values.values()),
-                })
-                st.dataframe(summary, use_container_width=True)
+                            st.dataframe(
+                                result_df.style.apply(_row_color, axis=1),
+                                use_container_width=True,
+                            )
+                            n_deg = int(preds.sum())
+                            st.metric(
+                                "열화 감지 행 수",
+                                f"{n_deg}/{len(up_df)} ({n_deg/len(up_df)*100:.1f}%)",
+                            )
+                            csv_bytes = result_df.to_csv(index=False).encode("utf-8-sig")
+                            st.download_button(
+                                "결과 CSV 다운로드",
+                                data=csv_bytes,
+                                file_name="femto_diagnosis_result.csv",
+                                mime="text/csv",
+                            )
+
+                except Exception as e:
+                    st.error(f"파일 처리 오류: {e}")
+
+            else:
+                with st.expander("업로드 CSV 샘플 형식 보기"):
+                    sample = pd.DataFrame([
+                        {"minute": 100, "h_rms": 0.55, "h_kurt": 3.1, "h_skew": 0.01,
+                         "h_crest": 3.6, "v_rms": 0.44, "v_kurt": 3.0, "v_skew": 0.00,
+                         "v_crest": 3.7, "temp_mean": 0.0},
+                        {"minute": 200, "h_rms": 2.80, "h_kurt": 8.5, "h_skew": 0.40,
+                         "h_crest": 9.2, "v_rms": 2.10, "v_kurt": 7.0, "v_skew": 0.30,
+                         "v_crest": 8.1, "temp_mean": 0.0},
+                    ])
+                    st.dataframe(sample, use_container_width=True)
+                    st.caption("femto_features.csv를 직접 업로드해도 됩니다.")
 
 
-# ════════════════════════════════════════════════════════
 # Tab 5: DL 아키텍처 비교 (5종)
 # ════════════════════════════════════════════════════════
 with tab5:
