@@ -8,7 +8,7 @@ scikit-learn>=1.3
 streamlit>=1.35
 
 # ── DL 전용 ───────────────────────────────────────────────────
-tensorflow>=2.15          # 1D-CNN / LSTM
+tensorflow-cpu==2.15.0    # Streamlit Cloud 호환 (CPU 전용)
 # torch>=2.1              # PyTorch 사용 시 주석 해제
 
 # ── 시각화 ────────────────────────────────────────────────────

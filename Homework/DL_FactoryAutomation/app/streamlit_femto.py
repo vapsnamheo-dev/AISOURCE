@@ -1,4 +1,4 @@
-"""
+﻿"""
 Streamlit 앱 — FEMTO-ST 베어링 예지보전 (ML+DL 통합 진단)
 ML만 적용시(열화 분류) + LSTM RUL 예측 결합 시스템
 """
@@ -193,8 +193,9 @@ def load_rul_models() -> tuple[object, object, object, dict]:
         try:
             import tensorflow as tf
             lstm_model = tf.keras.models.load_model(lstm_path)
-        except Exception:
-            pass
+        except Exception as e:
+            import streamlit as _st
+            _st.session_state["lstm_load_error"] = str(e)
     if results_path.exists():
         with open(results_path, encoding="utf-8") as f:
             rul_results = json.load(f)
@@ -612,7 +613,11 @@ with tab4:
                         else:
                             st.success(f"양호: 잔여수명 {use_rul:.0f}분")
                     else:
-                        st.info("DL 모델 미학습 — `python -m src.femto_dl_rul` 실행 후 사용 가능")
+                        _err = st.session_state.get("lstm_load_error")
+                        if _err:
+                            st.error(f"DL 모델 로드 실패: {_err}")
+                        else:
+                            st.info("DL 모델 미학습 — `python -m src.femto_dl_rul` 실행 후 사용 가능")
 
                 with st.expander("입력값 요약"):
                     st.dataframe(
