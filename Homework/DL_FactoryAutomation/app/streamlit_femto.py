@@ -217,12 +217,13 @@ if df.empty:
     st.stop()
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
     "📊 데이터 탐색 (demo data loading)",
     "🤖 ML 성능",
     "🔮 DL RUL 예측",
     "🏭 통합 진단 (실시간·CSV 진단)",
     "🔬 DL 아키텍처 비교 (5종)",
+    "🖼️ CNN 이미지 분류",
 ])
 
 # ════════════════════════════════════════════════════════
@@ -318,17 +319,40 @@ with tab2:
     if vif_df.empty:
         st.info("VIF 분석 결과가 없습니다. `python -m src.femto_preprocess` 를 실행하세요.")
     else:
-        def _color_vif(val: float) -> str:
-            if not isinstance(val, (int, float)) or np.isnan(val):
-                return ""
+        import html as _html
+        def _vif_bg(val):
+            if not isinstance(val, (int, float)) or (isinstance(val, float) and np.isnan(val)):
+                return "#444444", "#FFFFFF"
             if val >= 10:
-                return "background-color: #FFCCCC"
+                return "#CC3333", "#FFFFFF"
             if val >= 5:
-                return "background-color: #FFFFCC"
-            return "background-color: #CCFFCC"
+                return "#CC9900", "#000000"
+            return "#2d7a2d", "#FFFFFF"
 
-        styled = vif_df.style.applymap(_color_vif, subset=["VIF"])
-        st.dataframe(styled, use_container_width=True)
+        header = "<tr>" + "".join(
+            f'<th style="background:#1a4a7a;color:#FFFFFF;padding:8px 12px;text-align:left;border-bottom:2px solid #4a8abf;">{_html.escape(str(c))}</th>'
+            for c in vif_df.columns
+        ) + "</tr>"
+
+        rows_html = ""
+        for i, row in vif_df.iterrows():
+            cells = ""
+            for col in vif_df.columns:
+                val = row[col]
+                if col == "VIF":
+                    bg, fg = _vif_bg(val)
+                    txt = f"{val:.4f}" if isinstance(val, (int, float)) and not (isinstance(val, float) and np.isnan(val)) else str(val)
+                    cells += f'<td style="background:{bg};color:{fg};padding:8px 12px;font-weight:bold;text-align:right;border-bottom:1px solid #333;">{_html.escape(txt)}</td>'
+                else:
+                    cells += f'<td style="color:#E0E0E0;padding:8px 12px;border-bottom:1px solid #333;">{_html.escape(str(val))}</td>'
+            rows_html += f"<tr>{cells}</tr>"
+
+        st.html(f"""
+        <style>.vif-tbl{{border-collapse:collapse;width:100%;font-size:14px;}}
+        .vif-tbl tr:hover td{{background-color:rgba(255,255,255,0.05)!important;}}</style>
+        <div style="overflow-x:auto;border-radius:6px;border:1px solid #333;">
+        <table class="vif-tbl"><thead>{header}</thead><tbody>{rows_html}</tbody></table></div>
+        """)
         st.caption("VIF: 양호(녹색, <5) / 주의(노랑, 5~10) / 심각(빨강, ≥10)")
 
     st.divider()
@@ -354,7 +378,7 @@ with tab2:
             perf_df = pd.DataFrame(perf_rows).set_index("Model")
             best_name = ml_results.get("_best_model", "")
             st.dataframe(
-                perf_df.style.highlight_max(axis=0, color="#CCFFCC", subset=["Recall", "F1", "ROC-AUC"]),
+                perf_df.style.highlight_max(axis=0, color="#2d7a2d", subset=["Recall", "F1", "ROC-AUC"]),
                 use_container_width=True,
             )
             st.success(f"최고 모델 (Recall 기준): **{best_name}**")
@@ -779,8 +803,7 @@ with tab5:
                 cmp_df[c] = pd.to_numeric(cmp_df[c], errors="coerce")
 
             try:
-                styled = cmp_df.style.highlight_min(
-                    subset=["OOS RMSE (분)"], color="#CCFFCC", axis=0
+                styled = cmp_df.style.highlight_min(subset=["OOS RMSE (분)"], color="#2d7a2d", axis=0
                 ).format("{:.1f}", subset=numeric_cols, na_rep="-")
                 st.dataframe(styled, use_container_width=True)
             except Exception:
@@ -867,3 +890,128 @@ with tab5:
             st.success(f"✅ 저장 모델 확인: `{keras_path.name}` ({size_mb:.2f} MB)")
         else:
             st.warning(f"저장 모델 없음: `models/femto_best_dl_{best_model}.keras`")
+
+
+# ════════════════════════════════════════════════════════
+# Tab 6: CNN 이미지 분류
+# ════════════════════════════════════════════════════════
+with tab6:
+    st.header("🖼️ CNN 이미지 분류 — 결함 판정")
+    st.caption("이미지 파일을 업로드하면 CNN 모델이 결함 여부를 판정합니다.")
+
+    # 모델 경로 후보
+    _cnn_candidates = [
+        MODEL_DIR / "casting_defect_cnn.keras",
+        MODEL_DIR / "casting_defect_cnn.h5",
+        MODEL_DIR / "image_cnn.keras",
+        MODEL_DIR / "image_cnn.h5",
+    ]
+    _cnn_model_path = next((p for p in _cnn_candidates if p.exists()), None)
+
+    col_upload, col_result = st.columns([1, 1])
+
+    with col_upload:
+        st.subheader("📂 이미지 파일 선택")
+        uploaded = st.file_uploader(
+            "JPG / PNG / BMP 파일을 업로드하세요",
+            type=["jpg", "jpeg", "png", "bmp"],
+            help="제조 공정 이미지 파일 (예: 주조 결함 탐지용)",
+        )
+        if uploaded:
+            st.image(uploaded, caption=f"업로드: {uploaded.name}", use_container_width=True)
+
+    with col_result:
+        st.subheader("🔍 CNN 판정 결과")
+
+        if uploaded is None:
+            st.info("왼쪽에서 이미지를 업로드하면 CNN 판정이 시작됩니다.")
+        elif _cnn_model_path is None:
+            st.warning(
+                "CNN 이미지 분류 모델이 없습니다.  \n"
+                "아래 경로 중 하나에 모델을 저장하세요:  \n"
+                "- `models/casting_defect_cnn.keras`  \n"
+                "- `models/image_cnn.keras`  \n\n"
+                "**학습 방법**: `python -m src.femto_image_cnn` 실행  \n"
+                "(Casting Defect Dataset 필요)"
+            )
+            # 기본 픽셀 통계 표시 (모델 없어도 이미지 분석)
+            st.divider()
+            st.caption("기본 이미지 통계 (모델 없음 — 참고용)")
+            try:
+                from PIL import Image as PILImage
+                import numpy as np
+                import io
+                img_bytes = uploaded.read()
+                img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+                arr = np.array(img).astype(float)
+                st.metric("평균 밝기", f"{arr.mean():.1f}")
+                st.metric("표준편차", f"{arr.std():.1f}")
+                st.metric("이미지 크기", f"{img.width} × {img.height} px")
+                dark_ratio = float((arr.mean(axis=2) < 80).mean())
+                st.metric("어두운 영역 비율", f"{dark_ratio*100:.1f}%",
+                          help="어두운 영역이 많으면 결함 가능성 높음 (단순 추정)")
+                if dark_ratio > 0.3:
+                    st.error("⚠️ 어두운 영역 비율 높음 — 결함 의심 (CNN 모델로 정밀 판정 필요)")
+                else:
+                    st.success("✅ 이미지 밝기 정상 범위")
+            except Exception as e:
+                st.error(f"이미지 분석 실패: {e}")
+        else:
+            # CNN 모델 로드 & 예측
+            try:
+                import numpy as np
+                from PIL import Image as PILImage
+                import io
+                import tensorflow as tf
+
+                @st.cache_resource
+                def _load_cnn(path: str):
+                    return tf.keras.models.load_model(path)
+
+                cnn_model = _load_cnn(str(_cnn_model_path))
+                inp_shape = cnn_model.input_shape  # (None, H, W, C)
+                target_h  = inp_shape[1] or 224
+                target_w  = inp_shape[2] or 224
+                n_classes = cnn_model.output_shape[-1]
+                CLASS_NAMES = (
+                    ["정상(OK)", "결함(Defect)"] if n_classes == 2
+                    else [f"Class {i}" for i in range(n_classes)]
+                )
+
+                img_bytes = uploaded.read()
+                img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+                img_resized = img.resize((target_w, target_h))
+                arr = np.array(img_resized, dtype=np.float32) / 255.0
+                arr = np.expand_dims(arr, axis=0)
+
+                preds = cnn_model.predict(arr, verbose=0)[0]
+                pred_idx = int(np.argmax(preds))
+                confidence = float(preds[pred_idx])
+                pred_label = CLASS_NAMES[pred_idx] if pred_idx < len(CLASS_NAMES) else f"Class {pred_idx}"
+
+                if "결함" in pred_label or pred_idx > 0:
+                    st.error(f"🔴 판정: **{pred_label}**  ({confidence*100:.1f}%)")
+                else:
+                    st.success(f"🟢 판정: **{pred_label}**  ({confidence*100:.1f}%)")
+
+                st.divider()
+                st.caption("클래스별 확률")
+                prob_data = {CLASS_NAMES[i] if i < len(CLASS_NAMES) else f"Class {i}": float(preds[i])
+                             for i in range(len(preds))}
+                import pandas as pd
+                prob_df = pd.DataFrame({"클래스": list(prob_data.keys()),
+                                        "확률": list(prob_data.values())})
+                st.dataframe(prob_df.style.format({"확률": "{:.4f}"}), use_container_width=True)
+                st.metric("모델", _cnn_model_path.name)
+                st.metric("입력 크기", f"{target_h}×{target_w} px")
+
+            except Exception as e:
+                st.error(f"CNN 판정 실패: {e}")
+                st.code(str(e))
+
+    st.divider()
+    st.caption(
+        "**CNN 모델 학습 방법**: `python -m src.femto_image_cnn`  ·  "
+        "결함 이미지 데이터셋(ok/defect 폴더 구조) 필요  ·  "
+        "학습 완료 후 `models/casting_defect_cnn.keras` 자동 저장"
+    )
