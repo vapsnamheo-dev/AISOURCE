@@ -17,3 +17,7 @@ data/train/*.csv
 data/test/*.csv
 
 # demo CSV는 Streamlit 시연용으로 포함 (data/demo/*.csv 는 추적)
+
+# MLflow 로컬 실험 DB (로컬 전용)
+mlflow.db
+mlruns/
