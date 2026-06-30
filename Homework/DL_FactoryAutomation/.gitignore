@@ -9,6 +9,8 @@ models/*.npz
 !models/femto_*.keras
 !models/femto_*.pkl
 !models/femto_*.json
+# CNN 베어링 결함 분류 모델 추적
+!models/casting_defect_cnn.keras
 .pytest_cache/
 .ruff_cache/
 

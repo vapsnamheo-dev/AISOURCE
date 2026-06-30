@@ -403,22 +403,56 @@ with tab2:
 
     st.divider()
 
-    # Confusion Matrix (ml_threshold 적용)
+    # Confusion Matrix — OOS 테스트 데이터로 실시간 생성 (임계값 반영)
     st.subheader("최고 모델 Confusion Matrix")
     if ml_results and not df.empty and ml_model is not None and features:
         best_name = ml_results.get("_best_model", "")
-        best_r = ml_results.get(best_name, {})
-        if "confusion_matrix" in best_r:
-            st.write(f"임계값 = **{ml_threshold:.2f}** (사이드바 슬라이더로 조정)")
-            # 기본 CM (threshold=0.5 기준 저장값 사용, 실시간 반영은 아래에서)
-            cm_data = best_r["confusion_matrix"]
-            cm_df = pd.DataFrame(
-                cm_data,
-                index=["Actual Normal", "Actual Degraded"],
-                columns=["Pred Normal", "Pred Degraded"],
-            )
-            st.dataframe(cm_df)
-            st.caption("※ Confusion Matrix는 학습 시 threshold=0.5 기준. 실시간 임계값 효과는 Tab 4에서 확인.")
+        st.write(f"임계값 = **{ml_threshold:.2f}** (사이드바 슬라이더로 실시간 조정)")
+        try:
+            from sklearn.metrics import confusion_matrix as _sk_cm
+            import plotly.graph_objects as _go
+            _split_col = "split" if "split" in df.columns else None
+            _test_df = df[df[_split_col] == "test"].copy() if _split_col else df.copy()
+            if _test_df.empty:
+                _test_df = df.copy()
+            _feat_cols = [f for f in features if f in _test_df.columns]
+            _X = _test_df[_feat_cols].fillna(0).values
+            _y_true = _test_df["label"].values
+            _n = ml_scaler.n_features_in_ if ml_scaler is not None else _X.shape[1]
+            _X_sc = ml_scaler.transform(_X[:, :_n]) if ml_scaler is not None else _X
+            _y_prob = ml_model.predict_proba(_X_sc)[:, 1]
+            _y_pred = (_y_prob >= ml_threshold).astype(int)
+            _cm = _sk_cm(_y_true, _y_pred)
+            _fig_cm = _go.Figure(data=_go.Heatmap(
+                z=_cm,
+                x=["예측: 정상", "예측: 열화"],
+                y=["실제: 정상", "실제: 열화"],
+                colorscale=[[0, "#1a4a7a"], [0.5, "#c47d00"], [1, "#2d7a2d"]],
+                text=_cm, texttemplate="%{text}",
+                textfont={"size": 24, "color": "white"}, showscale=False,
+            ))
+            _fig_cm.update_layout(height=340, margin=dict(t=50, b=50, l=80, r=40),
+                title=dict(text=f"{best_name} — OOS Confusion Matrix (임계값 {ml_threshold:.2f})", font=dict(size=13)),
+                xaxis=dict(side="bottom"))
+            _col_cm, _col_cm_stat = st.columns([3, 2])
+            with _col_cm:
+                st.plotly_chart(_fig_cm, use_container_width=True)
+            with _col_cm_stat:
+                _tn, _fp, _fn, _tp = _cm.ravel()
+                _prec = _tp / (_tp + _fp) if (_tp + _fp) > 0 else 0.0
+                _rec  = _tp / (_tp + _fn) if (_tp + _fn) > 0 else 0.0
+                _f1   = 2 * _prec * _rec / (_prec + _rec) if (_prec + _rec) > 0 else 0.0
+                st.metric("TP — 열화 정탐 ✅", int(_tp))
+                st.metric("FP — 정상 오경보 ⚠️", int(_fp))
+                st.metric("FN — 열화 미탐 🔴", int(_fn))
+                st.metric("TN — 정상 정탐 ✅", int(_tn))
+                st.divider()
+                st.metric("Precision", f"{_prec:.4f}")
+                st.metric("Recall",    f"{_rec:.4f}")
+                st.metric("F1-Score",  f"{_f1:.4f}")
+            st.caption(f"※ OOS 테스트 베어링 {_test_df['bearing'].nunique() if 'bearing' in _test_df else '?'}종 기준 | 임계값 {ml_threshold:.2f} 실시간 반영")
+        except Exception as _cm_err:
+            st.error(f"Confusion Matrix 생성 실패: {_cm_err}")
 
 
 # ════════════════════════════════════════════════════════
