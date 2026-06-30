@@ -790,6 +790,55 @@ with tab4:
                                 np.round(rul_preds).astype(int).astype(str),
                             )
 
+                            n_deg    = int(preds.sum())
+                            n_total  = len(up_df)
+                            n_norm   = n_total - n_deg
+                            deg_rate = n_deg / n_total * 100
+
+                            # ── 요약 지표 (4열) ───────────────────────────────
+                            _sm1, _sm2, _sm3, _sm4 = st.columns(4)
+                            _sm1.metric("총 분석 행", f"{n_total:,} 행")
+                            _sm2.metric("정상 판정 🟢", f"{n_norm:,} 행",
+                                        delta=f"{100-deg_rate:.1f}%",
+                                        delta_color="normal")
+                            _sm3.metric("열화 감지 🔴", f"{n_deg:,} 행",
+                                        delta=f"{deg_rate:.1f}%",
+                                        delta_color="inverse")
+                            if "bearing" in result_df.columns:
+                                _risk_top = (result_df.groupby("bearing")["ML_열화확률(%)"]
+                                             .mean().sort_values(ascending=False))
+                                _sm4.metric("최고위험 베어링",
+                                            f"{_risk_top.index[0]}",
+                                            delta=f"열화확률 {_risk_top.iloc[0]:.1f}%",
+                                            delta_color="inverse")
+                            else:
+                                _sm4.metric("평균 열화확률", f"{probas.mean()*100:.1f}%")
+
+                            # ── 상태 배너 ─────────────────────────────────────
+                            if deg_rate >= 50:
+                                st.error(f"🔴 경고: 전체 데이터의 {deg_rate:.1f}%가 열화 구간으로 판정되었습니다. 즉시 점검이 필요합니다.")
+                            elif deg_rate >= 20:
+                                st.warning(f"⚠️ 주의: 전체의 {deg_rate:.1f}%가 열화 구간입니다. 모니터링을 강화하세요.")
+                            else:
+                                st.success(f"✅ 양호: 전체의 {deg_rate:.1f}%만 열화로 감지되었습니다.")
+
+                            st.divider()
+
+                            # ── 진단 결과 테이블 ──────────────────────────────
+                            _n_bear = result_df["bearing"].nunique() if "bearing" in result_df.columns else "-"
+                            _rul_valid = result_df["RF_RUL_분"][result_df["RF_RUL_분"] != "-"]
+                            _rul_info = (f"평균 RF_RUL {pd.to_numeric(_rul_valid, errors='coerce').mean():.0f}분"
+                                         if not _rul_valid.empty else "RUL 모델 미적용")
+
+                            st.subheader("📋 베어링별 ML 진단 결과")
+                            st.caption(
+                                f"총 **{n_total:,}행** · 베어링 **{_n_bear}종** · "
+                                f"열화 **{n_deg:,}행({deg_rate:.1f}%)** / 정상 **{n_norm:,}행** · "
+                                f"{_rul_info}  |  "
+                                f"🔴 분홍 행 = ML 열화 판정 (임계값 {ml_threshold:.2f}) · "
+                                f"RF_RUL_분 = 랜덤포레스트 잔여수명 예측값(분)"
+                            )
+
                             def _row_color(row):
                                 c = "background-color: #FFDDDD" if row["ML_판정"] == "열화" else ""
                                 return [c] * len(row)
@@ -797,15 +846,12 @@ with tab4:
                             st.dataframe(
                                 result_df.style.apply(_row_color, axis=1),
                                 use_container_width=True,
+                                height=320,
                             )
-                            n_deg = int(preds.sum())
-                            st.metric(
-                                "열화 감지 행 수",
-                                f"{n_deg}/{len(up_df)} ({n_deg/len(up_df)*100:.1f}%)",
-                            )
+
                             csv_bytes = result_df.to_csv(index=False).encode("utf-8-sig")
                             st.download_button(
-                                "결과 CSV 다운로드",
+                                "⬇️ 결과 CSV 다운로드",
                                 data=csv_bytes,
                                 file_name="femto_diagnosis_result.csv",
                                 mime="text/csv",
