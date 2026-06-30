@@ -920,24 +920,30 @@ with tab4:
                                         f"{'🔴' if _gc_idx>0 else '🟢'} CNN 판정: **{_gc_lbl}** ({_gc_p[_gc_idx]*100:.1f}%)"
                                     )
 
-                                    # Grad-CAM 계산
-                                    @st.cache_resource
-                                    def _csv_gm(_m):
-                                        _lc = None
-                                        for _l in _m.layers:
-                                            if isinstance(_l, _tf_gc.keras.layers.Conv2D): _lc = _l.name
-                                        return _tf_gc.keras.Model(inputs=_m.inputs, outputs=[_m.get_layer(_lc).output, _m.output]) if _lc else None
+                                    # Grad-CAM — Keras 3 호환 (레이어 직접 순차 호출)
+                                    def _csv_gc_k3(_m, _arr, _pidx):
+                                        _lci2 = None
+                                        for _i2, _l2 in enumerate(_m.layers):
+                                            if isinstance(_l2, _tf_gc.keras.layers.Conv2D): _lci2 = _i2
+                                        if _lci2 is None: return None
+                                        with _tf_gc.GradientTape() as _tp2:
+                                            _x2 = _tf_gc.cast(_arr, _tf_gc.float32)
+                                            _co2 = None
+                                            for _i2, _l2 in enumerate(_m.layers):
+                                                if _i2 == _lci2:
+                                                    _x2 = _l2(_x2); _co2 = _x2; _tp2.watch(_co2)
+                                                else:
+                                                    _x2 = _l2(_x2)
+                                            _ls2 = _x2[:, _pidx]
+                                        _gr2 = _tp2.gradient(_ls2, _co2)
+                                        _pw2 = _tf_gc.reduce_mean(_gr2, axis=(0,1,2)).numpy()
+                                        _cam2 = _np_gc.einsum("hwc,c->hw", _co2[0].numpy(), _pw2)
+                                        _cam2 = _np_gc.maximum(_cam2, 0)
+                                        if _cam2.max() > 0: _cam2 /= _cam2.max()
+                                        return _cam2
 
-                                    _gm = _csv_gm(_gc_cnn)
-                                    if _gm:
-                                        with _tf_gc.GradientTape() as _tp:
-                                            _co, _pr = _gm(_tf_gc.cast(_gc_arr, _tf_gc.float32))
-                                            _ls = _pr[:, _gc_idx]
-                                        _gr  = _tp.gradient(_ls, _co)
-                                        _pw  = _tf_gc.reduce_mean(_gr, axis=(0, 1, 2)).numpy()
-                                        _cam = _np_gc.einsum("hwc,c->hw", _co[0].numpy(), _pw)
-                                        _cam = _np_gc.maximum(_cam, 0)
-                                        if _cam.max() > 0: _cam /= _cam.max()
+                                    _cam = _csv_gc_k3(_gc_cnn, _gc_arr, _gc_idx)
+                                    if _cam is not None:
 
                                         _cam_pil = _PIL_gc.fromarray((_cam * 255).astype(_np_gc.uint8)).resize((_gc_iW, _gc_iH), _PIL_gc.BILINEAR)
                                         _cam_n   = _np_gc.array(_cam_pil) / 255.0
@@ -1141,8 +1147,12 @@ with tab6:
 
         _IMG_DIR = ROOT / "demo data" / "Bearing_image_file"
         _IMG_SAMPLES = {
-            "bearing_normal.png  (정상 베어링 진동)": _IMG_DIR / "bearing_normal.png",
-            "bearing_defect.png  (불량 베어링 진동)": _IMG_DIR / "bearing_defect.png",
+            "Stage 1 — 정상  (bearing_stage1_normal.png)":    _IMG_DIR / "bearing_stage1_normal.png",
+            "Stage 2 — 초기 열화  (bearing_stage2_early.png)": _IMG_DIR / "bearing_stage2_early.png",
+            "Stage 3 — 중기 열화  (bearing_stage3_moderate.png)": _IMG_DIR / "bearing_stage3_moderate.png",
+            "Stage 4 — 심각 열화  (bearing_stage4_severe.png)": _IMG_DIR / "bearing_stage4_severe.png",
+            "bearing_normal.png  (정상 베어링)":  _IMG_DIR / "bearing_normal.png",
+            "bearing_defect.png  (불량 베어링)":  _IMG_DIR / "bearing_defect.png",
         }
 
         # UploadedFile 호환 래퍼
@@ -1286,40 +1296,36 @@ with tab6:
             import matplotlib.cm as _cm
             from PIL import Image as _PIL
 
-            @st.cache_resource
-            def _build_grad_model(_m):
-                last_conv = None
-                for layer in _m.layers:
-                    if isinstance(layer, tf.keras.layers.Conv2D):
-                        last_conv = layer.name
-                if last_conv is None:
-                    return None
-                return tf.keras.Model(
-                    inputs=_m.inputs,
-                    outputs=[_m.get_layer(last_conv).output, _m.output],
-                )
-
-            _grad_model = _build_grad_model(_gc_model)
-
-            if _grad_model is None:
-                st.warning("Conv2D 레이어를 찾을 수 없어 Grad-CAM을 생성할 수 없습니다.")
-            else:
-                # ① 순전파 + 역전파로 기울기 계산
-                _gc_tensor = tf.cast(_gc_arr, tf.float32)
+            def _gradcam_k3(_m, _arr, _pred_idx):
+                # Keras 3: conv 직후 watch → 이후 레이어만 tape 추적, with 안에서 gradient() 미호출
+                _lci = None
+                for _i, _l in enumerate(_m.layers):
+                    if isinstance(_l, tf.keras.layers.Conv2D):
+                        _lci = _i
+                if _lci is None:
+                    return None, None
                 with tf.GradientTape() as _tape:
-                    _conv_out, _preds = _grad_model(_gc_tensor)
-                    _loss = _preds[:, _gc_pred_idx]
-                _grads = _tape.gradient(_loss, _conv_out)          # (1, fH, fW, C)
-
-                # ② 채널별 중요도(가중치) = 공간 평균 기울기
-                _pooled = tf.reduce_mean(_grads, axis=(0, 1, 2)).numpy()  # (C,)
-
-                # ③ Feature Map 가중합 + ReLU
-                _feat = _conv_out[0].numpy()                               # (fH, fW, C)
-                _cam  = np.einsum("hwc,c->hw", _feat, _pooled)            # (fH, fW)
-                _cam  = np.maximum(_cam, 0)
+                    _x = tf.cast(_arr, tf.float32)
+                    _co = None
+                    for _i, _l in enumerate(_m.layers):
+                        if _i == _lci:
+                            _x = _l(_x); _co = _x; _tape.watch(_co)
+                        else:
+                            _x = _l(_x)
+                    _loss = _x[:, _pred_idx]
+                _gr = _tape.gradient(_loss, _co)
+                _pw = tf.reduce_mean(_gr, axis=(0, 1, 2)).numpy()
+                _cam = np.einsum("hwc,c->hw", _co[0].numpy(), _pw)
+                _cam = np.maximum(_cam, 0)
                 if _cam.max() > 0:
                     _cam /= _cam.max()
+                return _cam, _pw
+
+            _cam, _pooled = _gradcam_k3(_gc_model, _gc_arr, _gc_pred_idx)
+
+            if _cam is None:
+                st.warning("Conv2D 레이어를 찾을 수 없어 Grad-CAM을 생성할 수 없습니다.")
+            else:
 
                 # ④ 원본 크기로 리사이즈
                 _cam_pil    = _PIL.fromarray((_cam * 255).astype(np.uint8)).resize(
