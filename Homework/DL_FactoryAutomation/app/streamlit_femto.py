@@ -623,19 +623,36 @@ with tab4:
             st.subheader("진동 특성 직접 입력")
             st.caption("현재 측정값을 입력하면 ML(열화 판정) + DL(잔여수명 예측)을 실시간으로 수행합니다.")
 
+            _pc1, _pc2, _ = st.columns([2, 2, 6])
+            with _pc1:
+                if st.button("Stage 1 정상 샘플", key="preset_stage1"):
+                    st.session_state.update({
+                        "_sl_h_rms": 0.10, "_sl_h_kurt": 3.0, "_sl_h_skew": 0.0, "_sl_h_crest": 3.8,
+                        "_sl_v_rms": 0.09, "_sl_v_kurt": 3.0, "_sl_v_skew": 0.0, "_sl_v_crest": 3.8,
+                        "_sl_temp": 25.0,
+                    })
+            with _pc2:
+                if st.button("Stage 4 열화 샘플", key="preset_stage4"):
+                    st.session_state.update({
+                        "_sl_h_rms": 3.50, "_sl_h_kurt": 8.5, "_sl_h_skew": 1.2, "_sl_h_crest": 9.0,
+                        "_sl_v_rms": 2.80, "_sl_v_kurt": 7.5, "_sl_v_skew": 0.8, "_sl_v_crest": 8.0,
+                        "_sl_temp": 55.0,
+                    })
+            st.caption("정상 기준: h_rms < 0.5 · h_kurt < 4.0  |  열화 기준: h_rms > 2.0 · h_kurt > 6.0")
+
             col1, col2 = st.columns(2)
             with col1:
-                h_rms = st.slider("h_rms (수평 진동 RMS)", 0.0, 10.0, 0.5, 0.01)
-                h_kurt = st.slider("h_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
-                h_skew = st.slider("h_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
-                h_crest = st.slider("h_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
+                h_rms = st.slider("h_rms (수평 진동 RMS)", 0.0, 10.0, 0.5, 0.01, key="_sl_h_rms")
+                h_kurt = st.slider("h_kurt (첨도)", 0.0, 20.0, 3.0, 0.1, key="_sl_h_kurt")
+                h_skew = st.slider("h_skew (왜도)", -5.0, 5.0, 0.0, 0.1, key="_sl_h_skew")
+                h_crest = st.slider("h_crest (파고율)", 1.0, 20.0, 4.0, 0.1, key="_sl_h_crest")
             with col2:
-                v_rms = st.slider("v_rms (수직 진동 RMS)", 0.0, 10.0, 0.45, 0.01)
-                v_kurt = st.slider("v_kurt (첨도)", 0.0, 20.0, 3.0, 0.1)
-                v_skew = st.slider("v_skew (왜도)", -5.0, 5.0, 0.0, 0.1)
-                v_crest = st.slider("v_crest (파고율)", 1.0, 20.0, 4.0, 0.1)
+                v_rms = st.slider("v_rms (수직 진동 RMS)", 0.0, 10.0, 0.45, 0.01, key="_sl_v_rms")
+                v_kurt = st.slider("v_kurt (첨도)", 0.0, 20.0, 3.0, 0.1, key="_sl_v_kurt")
+                v_skew = st.slider("v_skew (왜도)", -5.0, 5.0, 0.0, 0.1, key="_sl_v_skew")
+                v_crest = st.slider("v_crest (파고율)", 1.0, 20.0, 4.0, 0.1, key="_sl_v_crest")
 
-            temp = st.slider("온도 (°C)", 20.0, 80.0, 30.0, 0.5)
+            temp = st.slider("온도 (°C)", 20.0, 80.0, 30.0, 0.5, key="_sl_temp")
 
             if st.button("진단하기", type="primary"):
                 feature_values = {
@@ -749,6 +766,7 @@ with tab4:
             _csv_mode = st.radio(
                 "입력 방법",
                 ["📁 파일 업로드", "📦 레포 샘플 불러오기"],
+                index=1,
                 horizontal=True,
                 key="csv_input_mode",
             )
@@ -762,6 +780,7 @@ with tab4:
             if _csv_mode == "📁 파일 업로드":
                 # 모드 전환 시 이전 샘플 캐시 초기화
                 st.session_state.pop("_femto_sample_df", None)
+                st.session_state.pop("_femto_sample_key", None)
                 _csv_file = st.file_uploader(
                     "FEMTO 피처 CSV 업로드",
                     type=["csv"],
@@ -770,6 +789,7 @@ with tab4:
                 if _csv_file is not None:
                     up_df = pd.read_csv(_csv_file)
             else:
+                import requests as _req, io as _sio
                 _GITHUB_RAW = (
                     "https://raw.githubusercontent.com/vapsnamheo-dev/AISOURCE/main"
                     "/Homework/DL_FactoryAutomation/demo%20data"
@@ -778,25 +798,36 @@ with tab4:
                     "femto_demo.csv (3,305행 · 정상+열화 혼합)": f"{_GITHUB_RAW}/femto_demo.csv",
                 }
                 _sel_csv = st.selectbox("샘플 데이터 선택", list(_GITHUB_CSV.keys()), key="csv_sample_sel")
-                if st.button("📦 샘플 불러오기", key="load_sample_csv"):
+
+                # 선택 변경 시 캐시 초기화
+                if st.session_state.get("_femto_sample_key") != _sel_csv:
+                    st.session_state.pop("_femto_sample_df", None)
+
+                # 자동 로드 — 버튼 클릭 불필요
+                if "_femto_sample_df" not in st.session_state:
                     _local = _DEMO_CSV_PATHS.get(_sel_csv)
                     if _local and _local.exists():
                         st.session_state["_femto_sample_df"] = pd.read_csv(_local)
+                        st.session_state["_femto_sample_key"] = _sel_csv
+                        st.session_state["_femto_auto_run"] = True
                     else:
-                        import requests as _req, io as _sio
                         with st.spinner("GitHub에서 샘플 데이터 로드 중..."):
                             try:
                                 _r = _req.get(_GITHUB_CSV[_sel_csv], timeout=30)
                                 _r.raise_for_status()
                                 st.session_state["_femto_sample_df"] = pd.read_csv(_sio.StringIO(_r.text))
+                                st.session_state["_femto_sample_key"] = _sel_csv
+                                st.session_state["_femto_auto_run"] = True
                                 st.success("✅ GitHub에서 데이터 로드 완료")
                             except Exception as _fe:
-                                st.error(f"로드 실패: {_fe}")
-                    st.session_state["_femto_auto_run"] = True
+                                st.error(f"데이터 로드 실패: {_fe}")
+
+                if st.button("📦 새로고침", key="load_sample_csv"):
+                    st.session_state.pop("_femto_sample_df", None)
+                    st.session_state.pop("_femto_sample_key", None)
+
                 if "_femto_sample_df" in st.session_state:
                     up_df = st.session_state["_femto_sample_df"]
-                else:
-                    st.info("위에서 샘플을 선택하고 [샘플 불러오기] 버튼을 누르세요.")
 
             if up_df is not None:
                 try:
