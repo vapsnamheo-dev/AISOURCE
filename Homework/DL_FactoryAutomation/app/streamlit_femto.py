@@ -728,9 +728,16 @@ with tab4:
                         if use_rul <= rul_threshold:
                             st.error(f"긴급 경보: 잔여수명 {use_rul:.0f}분 (기준 {rul_threshold}분 이하)")
                         elif use_rul <= rul_threshold * 2:
-                            st.warning(f"주의: 잔여수명 {use_rul:.0f}분 (기준의 2배 이내)")
+                            if pred == 1:
+                                st.error(f"⚠️ ML 열화 감지 — 잔여수명 {use_rul:.0f}분 (ML 판정 우선)")
+                            else:
+                                st.warning(f"주의: 잔여수명 {use_rul:.0f}분 (기준의 2배 이내)")
                         else:
-                            st.success(f"양호: 잔여수명 {use_rul:.0f}분")
+                            if pred == 1:
+                                st.warning(f"⚠️ ML 열화 감지 — RUL {use_rul:.0f}분 (단일 입력 추정, ML 신뢰)")
+                                st.caption("슬라이더 단일 입력 시 RUL은 동일값 반복 추정으로 정확도가 낮습니다. ML 열화 판정을 우선 참고하세요.")
+                            else:
+                                st.success(f"양호: 잔여수명 {use_rul:.0f}분")
                     else:
                         _err_load = st.session_state.get("lstm_load_error")
                         _err_pred = st.session_state.get("lstm_rul_error") or st.session_state.get("rf_rul_error")
