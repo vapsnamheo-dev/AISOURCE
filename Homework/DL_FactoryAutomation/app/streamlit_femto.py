@@ -232,15 +232,54 @@ tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
 with tab1:
     st.header("📊 FEMTO-ST 데이터 탐색")
 
-    if df.empty:
+    # 전처리 데이터 없으면 GitHub 데모 CSV 자동 로드
+    _tab1_df = df.copy() if not df.empty else pd.DataFrame()
+    if _tab1_df.empty:
+        _demo_local = ROOT / "demo data" / "femto_demo.csv"
+        _demo_url = (
+            "https://raw.githubusercontent.com/vapsnamheo-dev/AISOURCE/main"
+            "/Homework/DL_FactoryAutomation/demo%20data/femto_demo.csv"
+        )
+        if _demo_local.exists():
+            _tab1_df = pd.read_csv(_demo_local)
+        else:
+            with st.spinner("GitHub 데모 데이터 로드 중..."):
+                try:
+                    import requests as _req1, io as _sio1
+                    _r1 = _req1.get(_demo_url, timeout=30)
+                    _tab1_df = pd.read_csv(_sio1.StringIO(_r1.text))
+                    st.success("✅ GitHub 데모 데이터 자동 로드 완료")
+                except Exception as _e1:
+                    st.warning(f"데모 데이터 로드 실패: {_e1}")
+
+    if _tab1_df.empty:
         st.info("데이터를 먼저 전처리하세요.")
     else:
-        # 데이터셋 요약
+        _t1_has_label = "label" in _tab1_df.columns
+        _t1_n_total   = len(_tab1_df)
+        _t1_n_deg     = int(_tab1_df["label"].sum()) if _t1_has_label else 0
+        _t1_n_norm    = _t1_n_total - _t1_n_deg
+        _t1_deg_rate  = _t1_n_deg / _t1_n_total * 100 if _t1_n_total else 0
+
+        # 데이터셋 요약 — attachment 2 스타일 메트릭 행
         col_a, col_b, col_c, col_d = st.columns(4)
-        col_a.metric("총 베어링 수", df["bearing"].nunique())
-        col_b.metric("총 스냅샷 수", f"{len(df):,}")
-        col_c.metric("열화 비율", f"{df['label'].mean()*100:.1f}%")
-        col_d.metric("데이터 모드", "Demo(합성)" if "Syn" in df["bearing"].iloc[0] else "실데이터")
+        col_a.metric("총 스냅샷 수", f"{_t1_n_total:,} 행")
+        col_b.metric("정상 판정 🟢", f"{_t1_n_norm:,} 행",
+                     delta=f"{100 - _t1_deg_rate:.1f}%", delta_color="normal")
+        col_c.metric("열화 감지 🔴", f"{_t1_n_deg:,} 행",
+                     delta=f"{_t1_deg_rate:.1f}%", delta_color="inverse")
+        col_d.metric("베어링 수", _tab1_df["bearing"].nunique() if "bearing" in _tab1_df.columns else "-")
+
+        if _t1_deg_rate >= 20:
+            st.error(f"⚠️ 경고: 전체 데이터의 {_t1_deg_rate:.1f}%가 열화 상태입니다.")
+        else:
+            st.success(f"✅ 정상: 전체의 {100 - _t1_deg_rate:.1f}%가 정상 범위입니다.")
+
+        st.subheader("데이터 미리보기")
+        st.dataframe(_tab1_df.head(5), use_container_width=True)
+
+        # 아래 시각화는 기존 df 변수 → _tab1_df 로 교체
+        df = _tab1_df  # 이후 Tab1 시각화 코드에서 df 참조하도록
 
         st.divider()
 
@@ -721,17 +760,33 @@ with tab4:
                 if _csv_file is not None:
                     up_df = pd.read_csv(_csv_file)
             else:
-                _avail = {k: v for k, v in _DEMO_CSV_PATHS.items() if v.exists()}
-                if not _avail:
-                    st.warning("레포에 샘플 파일이 없습니다.")
-                else:
-                    _sel_csv = st.selectbox("샘플 데이터 선택", list(_avail.keys()), key="csv_sample_sel")
-                    if st.button("📦 레포 샘플 로드", key="load_sample_csv"):
-                        st.session_state["_femto_sample_df"] = pd.read_csv(_avail[_sel_csv])
-                    if "_femto_sample_df" in st.session_state:
-                        up_df = st.session_state["_femto_sample_df"]
+                _GITHUB_RAW = (
+                    "https://raw.githubusercontent.com/vapsnamheo-dev/AISOURCE/main"
+                    "/Homework/DL_FactoryAutomation/demo%20data"
+                )
+                _GITHUB_CSV = {
+                    "femto_demo.csv (3,305행 · 정상+열화 혼합)": f"{_GITHUB_RAW}/femto_demo.csv",
+                }
+                _sel_csv = st.selectbox("샘플 데이터 선택", list(_GITHUB_CSV.keys()), key="csv_sample_sel")
+                if st.button("📦 샘플 불러오기", key="load_sample_csv"):
+                    _local = _DEMO_CSV_PATHS.get(_sel_csv)
+                    if _local and _local.exists():
+                        st.session_state["_femto_sample_df"] = pd.read_csv(_local)
                     else:
-                        st.info("위에서 샘플을 선택하고 [레포 샘플 로드] 버튼을 누르세요.")
+                        import requests as _req, io as _sio
+                        with st.spinner("GitHub에서 샘플 데이터 로드 중..."):
+                            try:
+                                _r = _req.get(_GITHUB_CSV[_sel_csv], timeout=30)
+                                _r.raise_for_status()
+                                st.session_state["_femto_sample_df"] = pd.read_csv(_sio.StringIO(_r.text))
+                                st.success("✅ GitHub에서 데이터 로드 완료")
+                            except Exception as _fe:
+                                st.error(f"로드 실패: {_fe}")
+                    st.session_state["_femto_auto_run"] = True
+                if "_femto_sample_df" in st.session_state:
+                    up_df = st.session_state["_femto_sample_df"]
+                else:
+                    st.info("위에서 샘플을 선택하고 [샘플 불러오기] 버튼을 누르세요.")
 
             if up_df is not None:
                 try:
@@ -756,7 +811,8 @@ with tab4:
                         _feat_list = features if features else REQUIRED + ["temp_mean"]
                         X_up = up_df[[f for f in _feat_list if f in up_df.columns]].fillna(0).values
 
-                        if st.button("일괄 진단 실행", type="primary", key="batch_run"):
+                        _auto_run_flag = st.session_state.pop("_femto_auto_run", False)
+                        if st.button("일괄 진단 실행", type="primary", key="batch_run") or _auto_run_flag:
                             with st.spinner("진단 중..."):
                                 try:
                                     n_sc = ml_scaler.n_features_in_ if ml_scaler is not None else X_up.shape[1]
@@ -871,6 +927,12 @@ with tab4:
                                 import io as _io_gc
                                 from PIL import Image as _PIL_gc
                                 import numpy as _np_gc
+                                # CNN 모델 경로 — Tab4 스코프 내 독립 탐색
+                                _cnn_model_path = next(
+                                    (p for p in [ROOT / "models" / "casting_defect_cnn.keras",
+                                                 ROOT / "models" / "image_cnn.keras"] if p.exists()),
+                                    None
+                                )
 
                                 # 최고위험 베어링 자동 선택
                                 if "bearing" in result_df.columns:
@@ -955,7 +1017,7 @@ with tab4:
                                         for _a, _im, _ti, _cmp in zip(
                                             _ax_gc,
                                             [_np_gc.array(_vib_r), _cam_n, (_ovl * 255).astype(_np_gc.uint8)],
-                                            ["① 원본 진동 이미지", "② Grad-CAM 히트맵", "③ 오버레이 결과"],
+                                            [f"① 원본 진동 이미지\n({_gc_lbl})", "② Grad-CAM 히트맵", f"③ 오버레이 결과\nPred Score: {_gc_p[_gc_idx]:.4f}"],
                                             [None, "jet", None],
                                         ):
                                             _a.imshow(_im, cmap=_cmp); _a.set_title(_ti); _a.axis("off")
@@ -1273,7 +1335,7 @@ with tab6:
                 st.dataframe(prob_df.style.format({"확률": "{:.4f}"}), use_container_width=True)
                 st.metric("모델", _cnn_model_path.name)
                 st.metric("입력 크기", f"{target_h}×{target_w} px")
-                _gradcam_data = (cnn_model, arr, pred_idx, img_resized, target_h, target_w)
+                _gradcam_data = (cnn_model, arr, pred_idx, img_resized, target_h, target_w, confidence, pred_label)
 
             except Exception as e:
                 st.error(f"CNN 판정 실패: {e}")
@@ -1281,7 +1343,7 @@ with tab6:
 
     # ── Grad-CAM 전체 폭 섹션 ──────────────────────────────────
     if _gradcam_data is not None:
-        _gc_model, _gc_arr, _gc_pred_idx, _gc_img, _gc_h, _gc_w = _gradcam_data
+        _gc_model, _gc_arr, _gc_pred_idx, _gc_img, _gc_h, _gc_w, _gc_conf, _gc_label = _gradcam_data
         st.divider()
         st.subheader("🔥 Grad-CAM 시각화 — CNN이 '어디를 보았는지'")
         st.caption(
@@ -1340,7 +1402,11 @@ with tab6:
 
                 # ⑥ 시각화 — 원본 / 히트맵 / 오버레이
                 _fig, _axes = _plt.subplots(1, 3, figsize=(13, 4))
-                _titles = ["① 원본 이미지", "② Grad-CAM 히트맵", "③ 오버레이 결과"]
+                _titles = [
+                    f"① 원본 이미지\n({_gc_label})",
+                    "② Grad-CAM 히트맵",
+                    f"③ 오버레이 결과\nPred Score: {_gc_conf:.4f}",
+                ]
                 _imgs   = [
                     np.array(_gc_img),
                     _cam_norm,
@@ -1361,23 +1427,20 @@ with tab6:
 
                 # ⑦ 채널 중요도 상위 5개 표시
                 with st.expander("📊 채널별 중요도 상세 (상위 5개)"):
-                    _top_idx = np.argsort(_pooled)[::-1][:5]
+                    _abs_pw = np.abs(_pooled)
+                    _top_idx = np.argsort(_abs_pw)[::-1][:5]
+                    _rel_pw = _abs_pw[_top_idx] / (_abs_pw.max() + 1e-10) * 100
                     import pandas as _pd2
                     st.dataframe(
                         _pd2.DataFrame({
                             "채널 번호": _top_idx,
-                            "중요도(기울기 평균)": _pooled[_top_idx].round(5),
+                            "기울기 평균 (raw)": [f"{v:.3e}" for v in _pooled[_top_idx]],
+                            "상대 중요도 (%)": _rel_pw.round(1),
                         }),
                         use_container_width=True,
                     )
-                    st.caption("※ 마지막 Conv 레이어 기준 | 양수=예측 클래스 강화, 음수=억제")
+                    st.caption("※ 마지막 Conv 레이어 기준 | 양수=강화·음수=억제 | 상대 중요도=|기울기|÷최대값×100")
 
         except Exception as _gc_err:
             st.warning(f"Grad-CAM 생성 실패: {_gc_err}")
 
-    st.divider()
-    st.caption(
-        "**CNN 모델 학습 방법**: `python -m src.femto_image_cnn`  ·  "
-        "결함 이미지 데이터셋(ok/defect 폴더 구조) 필요  ·  "
-        "학습 완료 후 `models/casting_defect_cnn.keras` 자동 저장"
-    )
