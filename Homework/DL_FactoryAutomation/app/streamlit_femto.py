@@ -811,6 +811,114 @@ with tab4:
                                 mime="text/csv",
                             )
 
+                            # ── Grad-CAM: CSV 진동 → 이미지 → CNN → 히트맵 ────────
+                            st.divider()
+                            st.subheader("🔥 Grad-CAM — 최고위험 베어링 진동 분석")
+                            st.caption(
+                                "열화 확률 최고 베어링의 진동 RMS를 이미지로 변환 → CNN 판정 → "
+                                "Grad-CAM으로 **어느 시점/구간이 판정에 결정적이었는지** 시각화합니다."
+                            )
+                            try:
+                                import tensorflow as _tf_gc
+                                import matplotlib.pyplot as _plt_gc
+                                import matplotlib.cm as _cm_gc
+                                import io as _io_gc
+                                from PIL import Image as _PIL_gc
+                                import numpy as _np_gc
+
+                                # 최고위험 베어링 자동 선택
+                                if "bearing" in result_df.columns:
+                                    _gc_risk = result_df.groupby("bearing")["ML_열화확률(%)"].mean().sort_values(ascending=False)
+                                    _gc_target = _gc_risk.index[0]
+                                    _gc_df_sel = up_df[up_df["bearing"] == _gc_target].copy()
+                                    st.info(f"📍 분석 대상: **베어링 {_gc_target}** (평균 열화확률 {_gc_risk.iloc[0]:.1f}%)")
+                                else:
+                                    _gc_target = "전체"
+                                    _gc_df_sel = up_df.copy()
+
+                                # 진동 RMS 시계열 → matplotlib 이미지
+                                _gc_time  = _gc_df_sel["minute"].values if "minute" in _gc_df_sel.columns else range(len(_gc_df_sel))
+                                _gc_hrms  = _gc_df_sel["h_rms"].values  if "h_rms"  in _gc_df_sel.columns else _gc_df_sel.iloc[:, 0].values
+                                _gc_vrms  = _gc_df_sel["v_rms"].values  if "v_rms"  in _gc_df_sel.columns else None
+                                _avg_prob = (_gc_risk.iloc[0] if "bearing" in result_df.columns else probas.mean() * 100)
+                                _vib_col  = "red" if _avg_prob >= ml_threshold * 100 else "green"
+
+                                _fig_vib, _ax_vib = _plt_gc.subplots(figsize=(8, 3), facecolor="white")
+                                _ax_vib.plot(_gc_time, _gc_hrms, color=_vib_col, linewidth=1.5, label="h_rms (수평)")
+                                if _gc_vrms is not None:
+                                    _ax_vib.plot(_gc_time, _gc_vrms, color="orange", linewidth=1.0, alpha=0.7, linestyle="--", label="v_rms (수직)")
+                                _ax_vib.set_xlabel("경과 시간 (분)"); _ax_vib.set_ylabel("RMS 가속도 (g)")
+                                _ax_vib.set_title(f"베어링 {_gc_target} — 진동 RMS 시계열")
+                                _ax_vib.legend(fontsize=8); _ax_vib.tick_params(labelsize=7)
+                                _plt_gc.tight_layout()
+                                _vib_buf = _io_gc.BytesIO()
+                                _fig_vib.savefig(_vib_buf, format="png", dpi=96, bbox_inches="tight")
+                                _plt_gc.close(_fig_vib); _vib_buf.seek(0)
+                                _vib_pil = _PIL_gc.open(_vib_buf).convert("RGB")
+
+                                # CNN 모델 로드 & 예측
+                                if _cnn_model_path and _cnn_model_path.exists():
+                                    @st.cache_resource
+                                    def _csv_cnn(p): return _tf_gc.keras.models.load_model(p)
+
+                                    _gc_cnn = _csv_cnn(str(_cnn_model_path))
+                                    _gc_iH  = _gc_cnn.input_shape[1] or 64
+                                    _gc_iW  = _gc_cnn.input_shape[2] or 96
+                                    _vib_r  = _vib_pil.resize((_gc_iW, _gc_iH), _PIL_gc.BILINEAR)
+                                    _gc_arr = _np_gc.expand_dims(_np_gc.array(_vib_r, dtype=_np_gc.float32) / 255.0, 0)
+                                    _gc_p   = _gc_cnn.predict(_gc_arr, verbose=0)[0]
+                                    _gc_idx = int(_np_gc.argmax(_gc_p))
+                                    _gc_lbl = ["정상(OK)", "결함(Defect)"][_gc_idx]
+
+                                    (st.error if _gc_idx > 0 else st.success)(
+                                        f"{'🔴' if _gc_idx>0 else '🟢'} CNN 판정: **{_gc_lbl}** ({_gc_p[_gc_idx]*100:.1f}%)"
+                                    )
+
+                                    # Grad-CAM 계산
+                                    @st.cache_resource
+                                    def _csv_gm(_m):
+                                        _lc = None
+                                        for _l in _m.layers:
+                                            if isinstance(_l, _tf_gc.keras.layers.Conv2D): _lc = _l.name
+                                        return _tf_gc.keras.Model(inputs=_m.inputs, outputs=[_m.get_layer(_lc).output, _m.output]) if _lc else None
+
+                                    _gm = _csv_gm(_gc_cnn)
+                                    if _gm:
+                                        with _tf_gc.GradientTape() as _tp:
+                                            _co, _pr = _gm(_tf_gc.cast(_gc_arr, _tf_gc.float32))
+                                            _ls = _pr[:, _gc_idx]
+                                        _gr  = _tp.gradient(_ls, _co)
+                                        _pw  = _tf_gc.reduce_mean(_gr, axis=(0, 1, 2)).numpy()
+                                        _cam = _np_gc.einsum("hwc,c->hw", _co[0].numpy(), _pw)
+                                        _cam = _np_gc.maximum(_cam, 0)
+                                        if _cam.max() > 0: _cam /= _cam.max()
+
+                                        _cam_pil = _PIL_gc.fromarray((_cam * 255).astype(_np_gc.uint8)).resize((_gc_iW, _gc_iH), _PIL_gc.BILINEAR)
+                                        _cam_n   = _np_gc.array(_cam_pil) / 255.0
+                                        _heat    = _cm_gc.get_cmap("jet")(_cam_n)[:, :, :3]
+                                        _orig    = _np_gc.array(_vib_r).astype(float) / 255.0
+                                        _ovl     = _np_gc.clip(0.55 * _orig + 0.45 * _heat, 0, 1)
+
+                                        _fig_gc, _ax_gc = _plt_gc.subplots(1, 3, figsize=(13, 4))
+                                        for _a, _im, _ti, _cmp in zip(
+                                            _ax_gc,
+                                            [_np_gc.array(_vib_r), _cam_n, (_ovl * 255).astype(_np_gc.uint8)],
+                                            ["① 원본 진동 이미지", "② Grad-CAM 히트맵", "③ 오버레이 결과"],
+                                            [None, "jet", None],
+                                        ):
+                                            _a.imshow(_im, cmap=_cmp); _a.set_title(_ti); _a.axis("off")
+                                        _plt_gc.colorbar(_plt_gc.cm.ScalarMappable(cmap="jet"), ax=_ax_gc[1], fraction=0.046, pad=0.04, label="중요도")
+                                        _plt_gc.tight_layout()
+                                        st.pyplot(_fig_gc); _plt_gc.close(_fig_gc)
+                                        st.caption(
+                                            f"※ 베어링 {_gc_target} 진동 RMS → 이미지 변환 → CNN → Grad-CAM  |  "
+                                            f"빨간 영역 = CNN이 '{_gc_lbl}' 판정 시 집중한 시간 구간"
+                                        )
+                                else:
+                                    st.warning("CNN 모델 없음 — Grad-CAM 생략 (`models/casting_defect_cnn.keras` 필요)")
+                            except Exception as _gc_csv_err:
+                                st.warning(f"Grad-CAM 생성 실패: {_gc_csv_err}")
+
                 except Exception as e:
                     st.error(f"파일 처리 오류: {e}")
 
