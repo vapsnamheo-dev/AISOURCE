@@ -35,12 +35,12 @@ PROCESSED_DIR = ROOT / "data" / "FEMTO_processed"
 MODEL_DIR = ROOT / "models"
 
 st.set_page_config(
-    page_title="FEMTO-ST 베어링 예지보전",
+    page_title="설비 고장 예측 (PdM-Guard)",
     page_icon="⚙️",
     layout="wide",
 )
-st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL 통합 진단")
-st.caption("ML만 적용시(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
+st.title("⚙️ 설비 고장 예측 (PdM-Guard)")
+st.caption("FEMTO-ST 베어링 예지보전 — ML 열화 분류 + DL RUL 예측 통합 시스템")
 
 # ── ML 프로젝트 링크 ──────────────────────────────────────────────────────────
 _col_link, _col_spacer = st.columns([1, 5])
@@ -662,15 +662,45 @@ with tab4:
                 "| temp_mean / energy / health_idx / rms_ratio 없으면 자동 계산"
             )
 
-            uploaded = st.file_uploader(
-                "FEMTO 피처 CSV 업로드",
-                type=["csv"],
-                key="femto_csv_upload",
+            # ── 입력 방법 선택 ────────────────────────────────────────────────
+            _csv_mode = st.radio(
+                "입력 방법",
+                ["📁 파일 업로드", "📦 레포 샘플 불러오기"],
+                horizontal=True,
+                key="csv_input_mode",
             )
 
-            if uploaded is not None:
+            _DEMO_CSV_PATHS = {
+                "femto_demo.csv (3,305행 · 정상+열화 혼합)": ROOT / "demo data" / "femto_demo.csv",
+            }
+
+            up_df = None
+
+            if _csv_mode == "📁 파일 업로드":
+                # 모드 전환 시 이전 샘플 캐시 초기화
+                st.session_state.pop("_femto_sample_df", None)
+                _csv_file = st.file_uploader(
+                    "FEMTO 피처 CSV 업로드",
+                    type=["csv"],
+                    key="femto_csv_upload",
+                )
+                if _csv_file is not None:
+                    up_df = pd.read_csv(_csv_file)
+            else:
+                _avail = {k: v for k, v in _DEMO_CSV_PATHS.items() if v.exists()}
+                if not _avail:
+                    st.warning("레포에 샘플 파일이 없습니다.")
+                else:
+                    _sel_csv = st.selectbox("샘플 데이터 선택", list(_avail.keys()), key="csv_sample_sel")
+                    if st.button("📦 레포 샘플 로드", key="load_sample_csv"):
+                        st.session_state["_femto_sample_df"] = pd.read_csv(_avail[_sel_csv])
+                    if "_femto_sample_df" in st.session_state:
+                        up_df = st.session_state["_femto_sample_df"]
+                    else:
+                        st.info("위에서 샘플을 선택하고 [레포 샘플 로드] 버튼을 누르세요.")
+
+            if up_df is not None:
                 try:
-                    up_df = pd.read_csv(uploaded)
                     st.write(f"로드된 데이터: {len(up_df):,}행 × {len(up_df.columns)}열")
                     st.dataframe(up_df.head(3), use_container_width=True)
 
@@ -912,13 +942,53 @@ with tab6:
 
     with col_upload:
         st.subheader("📂 이미지 파일 선택")
-        uploaded = st.file_uploader(
-            "JPG / PNG / BMP 파일을 업로드하세요",
-            type=["jpg", "jpeg", "png", "bmp"],
-            help="제조 공정 이미지 파일 (예: 주조 결함 탐지용)",
+
+        _img_mode = st.radio(
+            "입력 방법",
+            ["📁 파일 업로드", "📦 레포 샘플 불러오기"],
+            horizontal=True,
+            key="cnn_input_mode",
         )
+
+        _IMG_DIR = ROOT / "demo data" / "Bearing_image_file"
+        _IMG_SAMPLES = {
+            "bearing_normal.png  (정상 베어링 진동)": _IMG_DIR / "bearing_normal.png",
+            "bearing_defect.png  (불량 베어링 진동)": _IMG_DIR / "bearing_defect.png",
+        }
+
+        # UploadedFile 호환 래퍼
+        class _RepoImageFile:
+            def __init__(self, path):
+                self._data = Path(path).read_bytes()
+                self.name = Path(path).name
+            def read(self): return self._data
+
+        uploaded = None
+
+        if _img_mode == "📁 파일 업로드":
+            st.session_state.pop("_cnn_repo_img", None)
+            uploaded = st.file_uploader(
+                "JPG / PNG / BMP 파일을 업로드하세요",
+                type=["jpg", "jpeg", "png", "bmp"],
+                help="제조 공정 이미지 파일 (예: 주조 결함 탐지용)",
+            )
+        else:
+            _avail_imgs = {k: v for k, v in _IMG_SAMPLES.items() if v.exists()}
+            if not _avail_imgs:
+                st.warning("레포에 샘플 이미지가 없습니다.")
+            else:
+                _sel_img = st.selectbox("샘플 이미지 선택", list(_avail_imgs.keys()), key="cnn_sample_sel")
+                if st.button("📦 레포 샘플 로드", key="load_sample_img"):
+                    st.session_state["_cnn_repo_img"] = str(_avail_imgs[_sel_img])
+                if "_cnn_repo_img" in st.session_state:
+                    uploaded = _RepoImageFile(st.session_state["_cnn_repo_img"])
+                else:
+                    st.info("위에서 샘플을 선택하고 [레포 샘플 로드] 버튼을 누르세요.")
+
         if uploaded:
-            st.image(uploaded, caption=f"업로드: {uploaded.name}", use_container_width=True)
+            # _RepoImageFile: read() 항상 전체 반환 / UploadedFile: 직접 전달(버퍼 소모 방지)
+            _disp = uploaded.read() if isinstance(uploaded, _RepoImageFile) else uploaded
+            st.image(_disp, caption=f"선택: {uploaded.name}", use_container_width=True)
 
     with col_result:
         st.subheader("🔍 CNN 판정 결과")
