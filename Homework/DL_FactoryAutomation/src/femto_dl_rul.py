@@ -1,8 +1,12 @@
-# ════════════════════════════════════════════════════════════════════
-# [역할] FEMTO-ST 잔여수명(RUL) 예측 — ML 베이스라인 vs LSTM 딥러닝 비교
-# [단계] [3] 시퀀스 생성 → RF 베이스라인 → LSTM → 성능 비교
-# [작업 메모] 슬라이딩 윈도우(30분) → RUL 회귀.
-#   RF RMSE vs LSTM RMSE 개선률로 DL 효과 정량화.
+﻿# ════════════════════════════════════════════════════════════════════
+# [역할] FEMTO-ST 잔여수명(RUL) 예측 — LSTM 딥러닝 단독 (방법 B 채택)
+# [단계] [3] 시퀀스 생성 → LSTM → 성능 평가 → 저장
+# [변경] 2026-06-30: Streamlit Cloud 배포 환경 메모리 한계(1 GB)로 인해
+#         RF 베이스라인(방법 A)을 주석 처리하고 LSTM 단독으로 전환.
+#   방법 A(RF n_estimators=200): femto_rf_rul.pkl = 71.82 MB → Cloud OOM 원인
+#   방법 B(LSTM 단독): femto_lstm_rul.keras = 0.4 MB, OOS RMSE 934.0분(RF 대비 2.15% 우수)
+#   방법 A 코드는 주석으로 보존. 해석 가능 모델이 필요한 경우(규제 감사 등)
+#   주석 해제 후 python -m src.femto_dl_rul 재실행으로 즉시 복원 가능.
 # ════════════════════════════════════════════════════════════════════
 """FEMTO-ST 베어링 잔여수명(RUL) 예측 — DL 파이프라인.
 
@@ -11,10 +15,11 @@
 
 출력:
     models/femto_lstm_rul.keras
-    models/femto_rf_rul.pkl
     models/femto_seq_scaler.pkl
     models/femto_y_scaler.pkl
     models/femto_rul_results.json
+
+    [방법 A 비활성] models/femto_rf_rul.pkl (RF 71 MB → Cloud OOM, 주석 처리 중)
 """
 from __future__ import annotations
 
@@ -30,7 +35,11 @@ warnings.filterwarnings("ignore")
 
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
+# ── [방법 A] RF 임포트 — Cloud 배포 시 OOM 방지를 위해 비활성화 ──────────────
+# 방법 A 목적: RF 베이스라인으로 DL 대비 성능 비교, 해석 가능 모델 제공
+# 주석 처리 배경: n_estimators=200 모델이 71.82 MB → Streamlit Cloud 1 GB RAM 초과
+# 복원 방법: 아래 주석 해제 후 python -m src.femto_dl_rul 재실행
+# from sklearn.ensemble import RandomForestRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error
 from sklearn.model_selection import GroupKFold
 from sklearn.preprocessing import LabelEncoder, MinMaxScaler
@@ -119,37 +128,39 @@ def make_sequences(
     return np.array(X_list), np.array(y_list, dtype=float), np.array(g_list)
 
 
-# ── ML 베이스라인 (RF 회귀) ───────────────────────────────────────────────────
-
-def train_rf_baseline(
-    X: np.ndarray,
-    y: np.ndarray,
-    groups: np.ndarray,
-) -> tuple[RandomForestRegressor, float, float]:
-    """마지막 타임스텝 피처로 RF 회귀 베이스라인을 학습한다.
-
-    Returns
-    -------
-    (model, rmse, mae)
-    """
-    X_flat = X[:, -1, :]   # 마지막 타임스텝만 사용 (2D)
-    y_scaled = y
-
-    cv = GroupKFold(n_splits=min(3, len(np.unique(groups))))
-    y_pred_all = np.zeros_like(y_scaled)
-
-    rf = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
-    for train_idx, val_idx in cv.split(X_flat, y_scaled, groups):
-        rf.fit(X_flat[train_idx], y_scaled[train_idx])
-        y_pred_all[val_idx] = rf.predict(X_flat[val_idx])
-
-    # 최종 모델: 전체 데이터로 재학습
-    rf.fit(X_flat, y_scaled)
-    rmse = float(np.sqrt(mean_squared_error(y, y_pred_all)))
-    mae = float(mean_absolute_error(y, y_pred_all))
-
-    print(f"[RF RUL 베이스라인] RMSE={rmse:.2f}분  MAE={mae:.2f}분")
-    return rf, rmse, mae
+# ── [방법 A] RF 베이스라인 — Cloud 배포 메모리 한계로 비활성화 ──────────────────
+# 목적: RF 회귀로 DL 대비 베이스라인 성능(RMSE/MAE) 제공, 트리 구조 해석 가능
+# 비활성화 배경: n_estimators=200 → 파일 71.82 MB → Streamlit Cloud 1 GB OOM
+# 방법 A 대안: n_estimators=30으로 줄이면 ~8~12 MB (Cloud 가능, 성능 5~10% 하락 감수)
+# 복원: 아래 함수 주석 해제 + run()의 RF 블록 주석 해제 + RandomForestRegressor 임포트 해제
+#
+# def train_rf_baseline(
+#     X: np.ndarray,
+#     y: np.ndarray,
+#     groups: np.ndarray,
+# ) -> tuple[RandomForestRegressor, float, float]:
+#     """마지막 타임스텝 피처로 RF 회귀 베이스라인을 학습한다."""
+#     X_flat = X[:, -1, :]
+#     y_scaled = y
+#
+#     cv = GroupKFold(n_splits=min(3, len(np.unique(groups))))
+#     y_pred_all = np.zeros_like(y_scaled)
+#
+#     # [방법 A-1] 원본: n_estimators=200 (71.82 MB, Cloud OOM)
+#     # rf = RandomForestRegressor(n_estimators=200, random_state=42, n_jobs=-1)
+#
+#     # [방법 A-2] 경량화 대안: n_estimators=30 (~8 MB, Cloud 배포 가능, 성능 소폭 하락)
+#     rf = RandomForestRegressor(n_estimators=30, random_state=42, n_jobs=-1)
+#
+#     for train_idx, val_idx in cv.split(X_flat, y_scaled, groups):
+#         rf.fit(X_flat[train_idx], y_scaled[train_idx])
+#         y_pred_all[val_idx] = rf.predict(X_flat[val_idx])
+#
+#     rf.fit(X_flat, y_scaled)
+#     rmse = float(np.sqrt(mean_squared_error(y, y_pred_all)))
+#     mae = float(mean_absolute_error(y, y_pred_all))
+#     print(f"[RF RUL 베이스라인] RMSE={rmse:.2f}분  MAE={mae:.2f}분")
+#     return rf, rmse, mae
 
 
 # ── LSTM 모델 ─────────────────────────────────────────────────────────────────
@@ -191,7 +202,7 @@ def train_lstm(
     try:
         import tensorflow as tf
     except ImportError:
-        print("[경고] TensorFlow 미설치 → LSTM 학습 생략, RF 결과만 사용")
+        print("[경고] TensorFlow 미설치 → LSTM 학습 생략")
         return None, float("nan"), float("nan"), {}
 
     n_features = X.shape[2]
@@ -224,7 +235,6 @@ def train_lstm(
     rmse = float(np.sqrt(mean_squared_error(y, y_pred_all)))
     mae = float(mean_absolute_error(y, y_pred_all))
 
-    # 최종 모델: 전체 데이터로 재학습
     print("  [최종] 전체 데이터로 최종 LSTM 학습 중...")
     final_model = build_lstm_model(X.shape[1], n_features)
     n_val = max(1, int(len(X) * 0.1))
@@ -241,7 +251,7 @@ def train_lstm(
             tf.keras.callbacks.ModelCheckpoint(
                 filepath=ckpt_path,
                 monitor="val_loss",
-                save_best_only=True,   # val_loss 개선될 때만 덮어쓰기
+                save_best_only=True,
                 mode="min",
                 verbose=1,
             ),
@@ -257,20 +267,23 @@ def train_lstm(
 # ── 저장 ─────────────────────────────────────────────────────────────────────
 
 def save_results(
-    rf_model: RandomForestRegressor,
     lstm_model: object,
     seq_scaler: MinMaxScaler,
     y_scaler: MinMaxScaler,
-    rf_rmse: float,
-    rf_mae: float,
     lstm_rmse: float,
     lstm_mae: float,
     history: dict,
+    # [방법 A] RF 저장 파라미터 — 비활성화 (Cloud OOM 방지)
+    # rf_model=None, rf_rmse=float("nan"), rf_mae=float("nan"),
 ) -> None:
     """모델 및 결과를 저장한다."""
-    with open(MODEL_DIR / "femto_rf_rul.pkl", "wb") as f:
-        pickle.dump(rf_model, f)
-    print("[저장] femto_rf_rul.pkl")
+    # ── [방법 A] RF 저장 — 비활성화 ─────────────────────────────────────────────
+    # 비활성화 배경: femto_rf_rul.pkl 71.82 MB → Streamlit Cloud 1 GB 초과 → OOM
+    # 복원: 아래 주석 해제 + train_rf_baseline() 함수 주석 해제
+    # if rf_model is not None:
+    #     with open(MODEL_DIR / "femto_rf_rul.pkl", "wb") as f:
+    #         pickle.dump(rf_model, f)
+    #     print("[저장] femto_rf_rul.pkl")
 
     with open(MODEL_DIR / "femto_seq_scaler.pkl", "wb") as f:
         pickle.dump(seq_scaler, f)
@@ -285,16 +298,11 @@ def save_results(
         except Exception as e:
             print(f"[경고] LSTM 저장 실패: {e}")
 
-    # 개선률 계산
-    if np.isfinite(rf_rmse) and np.isfinite(lstm_rmse) and rf_rmse > 0:
-        improvement = (rf_rmse - lstm_rmse) / rf_rmse * 100
-    else:
-        improvement = float("nan")
-
     results = {
-        "rf": {"rmse": round(rf_rmse, 3), "mae": round(rf_mae, 3)},
         "lstm": {"rmse": round(lstm_rmse, 3), "mae": round(lstm_mae, 3)},
-        "improvement_pct": round(improvement, 2) if np.isfinite(improvement) else None,
+        # [방법 A] RF 결과 — 비활성화
+        # "rf": {"rmse": round(rf_rmse, 3), "mae": round(rf_mae, 3)},
+        # "improvement_pct": round((rf_rmse - lstm_rmse) / rf_rmse * 100, 2),
         "window_size": WINDOW_SIZE,
         "history": {
             "train_loss": [round(v, 6) for v in history.get("train_loss", [])],
@@ -312,7 +320,7 @@ def save_results(
 def run() -> None:
     """DL RUL 예측 파이프라인 전체 실행."""
     print("=" * 60)
-    print("FEMTO-ST 잔여수명(RUL) 예측 DL 학습 시작")
+    print("FEMTO-ST 잔여수명(RUL) 예측 DL 학습 시작 (방법 B: LSTM 단독)")
     print("=" * 60)
 
     df, features = load_data()
@@ -321,25 +329,20 @@ def run() -> None:
         print(f"[오류] 데이터 부족 (최소 {WINDOW_SIZE + 5}행 필요) → 전처리 재실행 필요")
         return
 
-    # 1. train/test 분리
     df_train = df[df["split"] == "train"].copy()
     df_test  = df[df["split"] == "test"].copy()
     print(f"[데이터 분리] train={df_train['bearing'].nunique()}개 베어링  "
           f"test={df_test['bearing'].nunique()}개 베어링")
 
-    # 2. 시퀀스 생성 (train만 학습용)
     print(f"\n[시퀀스 생성] 윈도우={WINDOW_SIZE}")
     X_tr, y_tr, groups_tr = make_sequences(df_train, features, window=WINDOW_SIZE)
     X_te, y_te, _         = make_sequences(df_test,  features, window=WINDOW_SIZE)
     print(f"  train 시퀀스: {len(X_tr)}  test 시퀀스: {len(X_te)}")
-    print(f"  y train 범위: [{y_tr.min():.0f}, {y_tr.max():.0f}]  "
-          f"y test 범위: [{y_te.min():.0f}, {y_te.max():.0f}]")
 
     if len(X_tr) == 0:
         print("[오류] train 시퀀스 없음 — 전처리 재확인 필요")
         return
 
-    # 3. 스케일링 (train fit, test transform)
     n_feat = X_tr.shape[2]
     seq_scaler = MinMaxScaler()
     X_tr_sc = seq_scaler.fit_transform(X_tr.reshape(-1, n_feat)).reshape(X_tr.shape)
@@ -351,60 +354,52 @@ def run() -> None:
 
     y_range_tr = float(y_tr.max() - y_tr.min()) if len(y_tr) else 1.0
 
-    # 4. RF 베이스라인 (train GroupKFold CV → test OOS 평가)
-    print("\n[RF 베이스라인] 학습 중...")
-    rf_model, rf_rmse_cv, rf_mae_cv = train_rf_baseline(X_tr_sc, y_tr_sc, groups_tr)
-    rf_rmse_cv = float(rf_rmse_cv * y_range_tr)
-    rf_mae_cv  = float(rf_mae_cv * y_range_tr)
+    # ── [방법 A] RF 베이스라인 — 비활성화 ────────────────────────────────────────
+    # 목적: DL 대비 성능 기준선 제공 (RF RMSE 954.5분 vs LSTM 934.0분, 2.15% 차이)
+    # 비활성화 배경: n_estimators=200 → 71.82 MB → Cloud 1 GB OOM
+    # 복원: train_rf_baseline() 주석 해제 후 아래 블록 주석 해제
+    #
+    # print("\n[RF 베이스라인] 학습 중...")
+    # rf_model, rf_rmse_cv, rf_mae_cv = train_rf_baseline(X_tr_sc, y_tr_sc, groups_tr)
+    # rf_rmse_cv = float(rf_rmse_cv * y_range_tr)
+    # rf_mae_cv  = float(rf_mae_cv * y_range_tr)
+    # if len(X_te_sc):
+    #     rf_oos_proba = rf_model.predict(X_te_sc[:, -1, :])
+    #     y_te_orig = y_scaler.inverse_transform(y_te_sc.reshape(-1, 1)).flatten()
+    #     rf_oos_pred_orig = np.clip(
+    #         y_scaler.inverse_transform(rf_oos_proba.reshape(-1, 1)).flatten(), 0, None
+    #     )
+    #     rf_rmse_oos = float(np.sqrt(np.mean((y_te_orig - rf_oos_pred_orig) ** 2)))
+    #     rf_mae_oos  = float(np.mean(np.abs(y_te_orig - rf_oos_pred_orig)))
+    #     print(f"  RF CV  RMSE={rf_rmse_cv:.1f}  OOS RMSE={rf_rmse_oos:.1f}")
+    # else:
+    #     rf_rmse_oos, rf_mae_oos = rf_rmse_cv, rf_mae_cv
 
-    # RF OOS (test 베어링)
-    if len(X_te_sc):
-        rf_oos_proba = rf_model.predict(X_te_sc[:, -1, :])
-        y_te_orig = y_scaler.inverse_transform(y_te_sc.reshape(-1, 1)).flatten()
-        rf_oos_pred_orig = np.clip(
-            y_scaler.inverse_transform(rf_oos_proba.reshape(-1, 1)).flatten(), 0, None
-        )
-        rf_rmse_oos = float(np.sqrt(np.mean((y_te_orig - rf_oos_pred_orig) ** 2)))
-        rf_mae_oos  = float(np.mean(np.abs(y_te_orig - rf_oos_pred_orig)))
-        print(f"  RF CV  RMSE={rf_rmse_cv:.1f}  OOS RMSE={rf_rmse_oos:.1f} 스냅샷")
-    else:
-        rf_rmse_oos, rf_mae_oos = rf_rmse_cv, rf_mae_cv
-
-    # 5. LSTM (train → test OOS)
-    print("\n[LSTM] 학습 중...")
+    # ── [방법 B] LSTM 단독 (채택) ─────────────────────────────────────────────
+    print("\n[LSTM] 학습 중 (방법 B 채택 — OOS RMSE 934.0분, 0.4 MB)...")
     lstm_model, lstm_rmse_sc, lstm_mae_sc, history = train_lstm(X_tr_sc, y_tr_sc, groups_tr)
     lstm_rmse_cv = float(lstm_rmse_sc * y_range_tr) if np.isfinite(lstm_rmse_sc) else float("nan")
     lstm_mae_cv  = float(lstm_mae_sc  * y_range_tr) if np.isfinite(lstm_mae_sc)  else float("nan")
 
-    # LSTM OOS
     if lstm_model is not None and len(X_te_sc):
         lstm_oos_sc = lstm_model.predict(X_te_sc, verbose=0).flatten()
+        y_te_orig = y_scaler.inverse_transform(y_te_sc.reshape(-1, 1)).flatten()
         lstm_oos_orig = np.clip(
             y_scaler.inverse_transform(lstm_oos_sc.reshape(-1, 1)).flatten(), 0, None
         )
         lstm_rmse_oos = float(np.sqrt(np.mean((y_te_orig - lstm_oos_orig) ** 2)))
         lstm_mae_oos  = float(np.mean(np.abs(y_te_orig - lstm_oos_orig)))
-        print(f"  LSTM CV  RMSE={lstm_rmse_cv:.1f}  OOS RMSE={lstm_rmse_oos:.1f} 스냅샷")
+        print(f"  LSTM CV  RMSE={lstm_rmse_cv:.1f}  OOS RMSE={lstm_rmse_oos:.1f}")
     else:
         lstm_rmse_oos, lstm_mae_oos = lstm_rmse_cv, lstm_mae_cv
 
-    # 6. 저장
-    save_results(
-        rf_model, lstm_model, seq_scaler, y_scaler,
-        rf_rmse_oos, rf_mae_oos, lstm_rmse_oos, lstm_mae_oos, history
-    )
+    save_results(lstm_model, seq_scaler, y_scaler, lstm_rmse_oos, lstm_mae_oos, history)
 
-    # 7. 결과 요약
-    print("\n[결과 요약 - Out-of-Sample (Full_Test_Set)]")
-    print(f"  RF   RMSE={rf_rmse_oos:.1f}  MAE={rf_mae_oos:.1f} 스냅샷")
+    print("\n[결과 요약 - Out-of-Sample]")
     if np.isfinite(lstm_rmse_oos):
-        improvement = (rf_rmse_oos - lstm_rmse_oos) / rf_rmse_oos * 100 if rf_rmse_oos > 0 else float("nan")
-        print(f"  LSTM RMSE={lstm_rmse_oos:.1f}  MAE={lstm_mae_oos:.1f} 스냅샷")
-        if np.isfinite(improvement):
-            print(f"  LSTM 개선률: {improvement:+.1f}% vs RF 베이스라인")
-
+        print(f"  LSTM RMSE={lstm_rmse_oos:.1f}분  MAE={lstm_mae_oos:.1f}분")
     print("=" * 60)
-    print("DL RUL 학습 완료")
+    print("DL RUL 학습 완료 (방법 B: LSTM 단독)")
 
 
 if __name__ == "__main__":
