@@ -664,26 +664,31 @@ with tab4:
                 predicted_rul = None
                 if rf_rul is not None:
                     try:
-                        sc_in = seq_scaler.transform(input_vals) if seq_scaler is not None else input_vals
+                        _n_rul = seq_scaler.n_features_in_ if seq_scaler is not None else input_vals.shape[1]
+                        _iv_rul = input_vals[:, :_n_rul]
+                        sc_in = seq_scaler.transform(_iv_rul) if seq_scaler is not None else _iv_rul
                         rul_raw = rf_rul.predict(sc_in)[0]
                         predicted_rul = max(0.0, float(
                             y_scaler.inverse_transform([[rul_raw]])[0][0]
                             if y_scaler is not None else rul_raw
                         ))
-                    except Exception:
+                    except Exception as _e_rul:
+                        st.session_state["rf_rul_error"] = str(_e_rul)
                         predicted_rul = None
 
                 lstm_rul_pred = None
                 if lstm_rul is not None and seq_scaler is not None:
                     try:
-                        seq_input = np.tile(input_vals, (30, 1))
+                        _n_seq = seq_scaler.n_features_in_
+                        seq_input = np.tile(input_vals[:, :_n_seq], (30, 1))
                         seq_sc = seq_scaler.transform(seq_input)[np.newaxis, :, :]
                         rul_raw_l = lstm_rul.predict(seq_sc, verbose=0)[0][0]
                         lstm_rul_pred = max(0.0, float(
                             y_scaler.inverse_transform([[rul_raw_l]])[0][0]
                             if y_scaler is not None else rul_raw_l
                         ))
-                    except Exception:
+                    except Exception as _e_lstm:
+                        st.session_state["lstm_rul_error"] = str(_e_lstm)
                         lstm_rul_pred = None
 
                 st.divider()
@@ -710,11 +715,16 @@ with tab4:
                         else:
                             st.success(f"양호: 잔여수명 {use_rul:.0f}분")
                     else:
-                        _err = st.session_state.get("lstm_load_error")
-                        if _err:
-                            st.error(f"DL 모델 로드 실패: {_err}")
+                        _err_load = st.session_state.get("lstm_load_error")
+                        _err_pred = st.session_state.get("lstm_rul_error") or st.session_state.get("rf_rul_error")
+                        if _err_load:
+                            st.error(f"LSTM 로드 실패: {_err_load}")
+                        elif _err_pred:
+                            st.warning(f"RUL 예측 오류 (피처 형태 불일치 가능): {_err_pred}")
+                        elif lstm_rul is None and rf_rul is None:
+                            st.info("RUL model not found — run `python -m src.femto_dl_rul` first")
                         else:
-                            st.info("DL 모델 미학습 — `python -m src.femto_dl_rul` 실행 후 사용 가능")
+                            st.warning("RUL prediction returned None — check feature count vs scaler")
 
                 with st.expander("입력값 요약"):
                     st.dataframe(
@@ -1017,7 +1027,7 @@ with tab4:
                                         for _a, _im, _ti, _cmp in zip(
                                             _ax_gc,
                                             [_np_gc.array(_vib_r), _cam_n, (_ovl * 255).astype(_np_gc.uint8)],
-                                            [f"① 원본 진동 이미지\n({_gc_lbl})", "② Grad-CAM 히트맵", f"③ 오버레이 결과\nPred Score: {_gc_p[_gc_idx]:.4f}"],
+                                            [f"(1) Vibration Image\n({_gc_lbl})", "(2) Grad-CAM Heatmap", f"(3) Overlay\nPred Score: {_gc_p[_gc_idx]:.4f}"],
                                             [None, "jet", None],
                                         ):
                                             _a.imshow(_im, cmap=_cmp); _a.set_title(_ti); _a.axis("off")
@@ -1403,9 +1413,9 @@ with tab6:
                 # ⑥ 시각화 — 원본 / 히트맵 / 오버레이
                 _fig, _axes = _plt.subplots(1, 3, figsize=(13, 4))
                 _titles = [
-                    f"① 원본 이미지\n({_gc_label})",
-                    "② Grad-CAM 히트맵",
-                    f"③ 오버레이 결과\nPred Score: {_gc_conf:.4f}",
+                    f"(1) Original Image\n({_gc_label})",
+                    "(2) Grad-CAM Heatmap",
+                    f"(3) Overlay\nPred Score: {_gc_conf:.4f}",
                 ]
                 _imgs   = [
                     np.array(_gc_img),
