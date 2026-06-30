@@ -972,6 +972,7 @@ with tab6:
     ]
     _cnn_model_path = next((p for p in _cnn_candidates if p.exists()), None)
 
+    _gradcam_data = None  # (model, arr, pred_idx, img_resized, h, w) — Grad-CAM용
     col_upload, col_result = st.columns([1, 1])
 
     with col_upload:
@@ -1108,10 +1109,111 @@ with tab6:
                 st.dataframe(prob_df.style.format({"확률": "{:.4f}"}), use_container_width=True)
                 st.metric("모델", _cnn_model_path.name)
                 st.metric("입력 크기", f"{target_h}×{target_w} px")
+                _gradcam_data = (cnn_model, arr, pred_idx, img_resized, target_h, target_w)
 
             except Exception as e:
                 st.error(f"CNN 판정 실패: {e}")
                 st.code(str(e))
+
+    # ── Grad-CAM 전체 폭 섹션 ──────────────────────────────────
+    if _gradcam_data is not None:
+        _gc_model, _gc_arr, _gc_pred_idx, _gc_img, _gc_h, _gc_w = _gradcam_data
+        st.divider()
+        st.subheader("🔥 Grad-CAM 시각화 — CNN이 '어디를 보았는지'")
+        st.caption(
+            "마지막 Conv 레이어의 Feature Map 기울기(Gradient)를 역전파하여 "
+            "예측에 영향을 준 영역을 히트맵으로 표시합니다.  "
+            "**빨간색 = 판정에 가장 중요한 영역 / 파란색 = 덜 중요한 영역**"
+        )
+        try:
+            import tensorflow as tf
+            import numpy as np
+            import matplotlib.pyplot as _plt
+            import matplotlib.cm as _cm
+            from PIL import Image as _PIL
+
+            @st.cache_resource
+            def _build_grad_model(_m):
+                last_conv = None
+                for layer in _m.layers:
+                    if isinstance(layer, tf.keras.layers.Conv2D):
+                        last_conv = layer.name
+                if last_conv is None:
+                    return None
+                return tf.keras.Model(
+                    inputs=_m.inputs,
+                    outputs=[_m.get_layer(last_conv).output, _m.output],
+                )
+
+            _grad_model = _build_grad_model(_gc_model)
+
+            if _grad_model is None:
+                st.warning("Conv2D 레이어를 찾을 수 없어 Grad-CAM을 생성할 수 없습니다.")
+            else:
+                # ① 순전파 + 역전파로 기울기 계산
+                _gc_tensor = tf.cast(_gc_arr, tf.float32)
+                with tf.GradientTape() as _tape:
+                    _conv_out, _preds = _grad_model(_gc_tensor)
+                    _loss = _preds[:, _gc_pred_idx]
+                _grads = _tape.gradient(_loss, _conv_out)          # (1, fH, fW, C)
+
+                # ② 채널별 중요도(가중치) = 공간 평균 기울기
+                _pooled = tf.reduce_mean(_grads, axis=(0, 1, 2)).numpy()  # (C,)
+
+                # ③ Feature Map 가중합 + ReLU
+                _feat = _conv_out[0].numpy()                               # (fH, fW, C)
+                _cam  = np.einsum("hwc,c->hw", _feat, _pooled)            # (fH, fW)
+                _cam  = np.maximum(_cam, 0)
+                if _cam.max() > 0:
+                    _cam /= _cam.max()
+
+                # ④ 원본 크기로 리사이즈
+                _cam_pil    = _PIL.fromarray((_cam * 255).astype(np.uint8)).resize(
+                    (_gc_w, _gc_h), _PIL.BILINEAR
+                )
+                _cam_norm   = np.array(_cam_pil) / 255.0
+
+                # ⑤ jet 컬러맵 적용 + 원본과 오버레이
+                _heatmap_rgb = _cm.get_cmap("jet")(_cam_norm)[:, :, :3]
+                _orig_arr    = np.array(_gc_img).astype(float) / 255.0
+                _overlay     = np.clip(0.55 * _orig_arr + 0.45 * _heatmap_rgb, 0, 1)
+
+                # ⑥ 시각화 — 원본 / 히트맵 / 오버레이
+                _fig, _axes = _plt.subplots(1, 3, figsize=(13, 4))
+                _titles = ["① 원본 이미지", "② Grad-CAM 히트맵", "③ 오버레이 결과"]
+                _imgs   = [
+                    np.array(_gc_img),
+                    _cam_norm,
+                    (_overlay * 255).astype(np.uint8),
+                ]
+                _cmaps  = [None, "jet", None]
+                for _ax, _im, _ti, _cmp in zip(_axes, _imgs, _titles, _cmaps):
+                    _ax.imshow(_im, cmap=_cmp)
+                    _ax.set_title(_ti, fontsize=11, pad=6)
+                    _ax.axis("off")
+                _plt.colorbar(
+                    _plt.cm.ScalarMappable(cmap="jet"), ax=_axes[1],
+                    fraction=0.046, pad=0.04, label="중요도"
+                )
+                _plt.tight_layout()
+                st.pyplot(_fig)
+                _plt.close(_fig)
+
+                # ⑦ 채널 중요도 상위 5개 표시
+                with st.expander("📊 채널별 중요도 상세 (상위 5개)"):
+                    _top_idx = np.argsort(_pooled)[::-1][:5]
+                    import pandas as _pd2
+                    st.dataframe(
+                        _pd2.DataFrame({
+                            "채널 번호": _top_idx,
+                            "중요도(기울기 평균)": _pooled[_top_idx].round(5),
+                        }),
+                        use_container_width=True,
+                    )
+                    st.caption("※ 마지막 Conv 레이어 기준 | 양수=예측 클래스 강화, 음수=억제")
+
+        except Exception as _gc_err:
+            st.warning(f"Grad-CAM 생성 실패: {_gc_err}")
 
     st.divider()
     st.caption(
