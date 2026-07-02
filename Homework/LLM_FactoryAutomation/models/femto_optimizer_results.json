@@ -1,0 +1,20 @@
+{
+  "Adam": {
+    "cv_rmse": 1215.75,
+    "cv_mae": 1030.57,
+    "oos_rmse": 996.88,
+    "oos_mae": 756.22
+  },
+  "Nadam": {
+    "cv_rmse": 1231.05,
+    "cv_mae": 1068.34,
+    "oos_rmse": 977.7,
+    "oos_mae": 760.26
+  },
+  "AdamW": {
+    "cv_rmse": 1116.0,
+    "cv_mae": 961.04,
+    "oos_rmse": 1011.36,
+    "oos_mae": 765.46
+  }
+}

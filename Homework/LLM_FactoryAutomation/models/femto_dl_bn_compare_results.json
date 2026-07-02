@@ -1,0 +1,25 @@
+{
+  "GRU_v1_baseline": {
+    "cv_rmse": 1175.35,
+    "cv_mae": 1010.27,
+    "oos_rmse": 973.47,
+    "oos_mae": 806.26,
+    "actual_epochs": 54
+  },
+  "GRU_v2_BN_LN": {
+    "cv_rmse": 1037.68,
+    "cv_mae": 845.86,
+    "oos_rmse": 810.38,
+    "oos_mae": 665.63,
+    "actual_epochs": 33
+  },
+  "improvement_pct": 16.75,
+  "winner": "GRU_v2(BN+LN)",
+  "improved": true,
+  "settings": {
+    "window": 20,
+    "units": 32,
+    "dropout": 0.1,
+    "batch": 16
+  }
+}

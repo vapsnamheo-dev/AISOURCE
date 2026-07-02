@@ -1,0 +1,46 @@
+{
+  "results": [
+    {
+      "model": "1D-CNN(멀티채널)",
+      "note": "기존 기준",
+      "params": 176321,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 9,
+      "threshold": 0.75
+    },
+    {
+      "model": "MLP(Flatten→Dense)",
+      "note": "신규 비교",
+      "params": 1722753,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 9,
+      "threshold": 0.75
+    },
+    {
+      "model": "BiLSTM(Conv다운샘플→Bi-LSTM)",
+      "note": "신규 비교",
+      "params": 59617,
+      "accuracy": 0.3424,
+      "f1": 0.0,
+      "roc_auc": 0.5,
+      "actual_epochs": 9,
+      "threshold": 0.75
+    }
+  ],
+  "best": {
+    "model": "1D-CNN(멀티채널)",
+    "note": "기존 기준",
+    "params": 176321,
+    "accuracy": 0.3424,
+    "f1": 0.0,
+    "roc_auc": 0.5,
+    "actual_epochs": 9,
+    "threshold": 0.75
+  },
+  "threshold": 0.75,
+  "batch": 64
+}

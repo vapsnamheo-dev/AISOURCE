@@ -5,8 +5,9 @@
 .pytest_cache/
 .ruff_cache/
 
-# 대용량 데이터/모델 아티팩트는 Git에서 제외 (리포지토리 경량화)
-# Streamlit Cloud 등에 배포 시 별도 스토리지(HF Hub/S3 등)에서 다운로드하거나
-# 필요한 최소 모델 파일만 예외 처리할 것
+# 대용량 원본 데이터는 Git에서 제외 (앱이 최초 실행 시 자동 재생성함)
 data/
-models/
+
+# 모델 아티팩트는 Streamlit Cloud 배포를 위해 대부분 추적하되,
+# GitHub 개별 파일 용량이 큰 것만 제외
+models/femto_rf_rul.pkl
