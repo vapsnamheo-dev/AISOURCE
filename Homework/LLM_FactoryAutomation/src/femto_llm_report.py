@@ -34,11 +34,14 @@ SYSTEM_PROMPT = """당신은 베어링 설비 예지보전(PdM) 전문가입니�
 센서 데이터, ML 분류 결과, DL 잔여수명(RUL) 예측, 과거 유사 사례를 종합하여
 현장 정비 담당자가 즉시 이해하고 조치할 수 있는 진단 보고서를 작성합니다.
 
-보고서 형식 (4개 섹션, 총 300자 이내):
+보고서 형식 (5개 섹션, 총 350자 이내):
 1. [현재 상태] 베어링 상태를 한 줄로 요약 (정상/주의/위험)
 2. [주요 이상 신호] 센서값에서 관찰된 이상 패턴 2~3가지
-3. [정비 권고] 구체적 조치 사항 (즉시/24시간 내/1주일 내)
+3. [정비 권고] 구체적 조치 사항 (즉시/24시간 내/1주일 내) — [정비 지식 문서 근거]에
+   해당 조치의 근거가 있으면 반드시 인용하세요.
 4. [유사 사례 참고] 가장 유사한 과거 사례의 결과와 교훈
+5. [문서 근거] [정비 지식 문서 근거] 섹션 중 이번 판단에 사용한 내용을 1줄로 요약.
+   근거가 없으면 "해당 없음"이라고 쓰세요.
 
 전문 용어보다 현장 언어로 작성하세요."""
 
@@ -51,6 +54,7 @@ def _build_context(
     rul_min: float | None,
     rul_alarm_min: float,
     rag_cases: list[dict[str, Any]],
+    doc_snippets: list[str] | None = None,
 ) -> str:
     lines = ["=== 베어링 진단 요청 ===\n"]
 
@@ -83,6 +87,13 @@ def _build_context(
     else:
         lines.append("  유사 사례 없음 (RAG 인덱스 미구축)")
 
+    lines.append(f"\n[정비 지식 문서 근거 (RAG-Level2)]")
+    if doc_snippets:
+        for i, snippet in enumerate(doc_snippets, 1):
+            lines.append(f"  ({i}) {snippet.strip()}")
+    else:
+        lines.append("  문서 근거 없음 (RAG-Level2 인덱스 미구축 또는 미조회)")
+
     return "\n".join(lines)
 
 
@@ -94,6 +105,7 @@ def generate_report(
     rul_min: float | None = None,
     rul_alarm_min: float = 60.0,
     rag_cases: list[dict[str, Any]] | None = None,
+    doc_snippets: list[str] | None = None,
     model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 600,
 ) -> str:
@@ -108,7 +120,8 @@ def generate_report(
     ml_threshold : ML 판정 임계값
     rul_min      : DL 예측 잔여수명 (분, None이면 미예측)
     rul_alarm_min: DL 경보 기준 (분)
-    rag_cases    : femto_rag_search.search() 반환값
+    rag_cases    : femto_rag_search.search() 반환값 (RAG-Level1, 수치 유사사례)
+    doc_snippets : femto_doc_rag.retrieve_docs() 반환값 (RAG-Level2, 정비 지식 문서)
     model        : Claude 모델 ID
     max_tokens   : 최대 출력 토큰
 
@@ -124,6 +137,7 @@ def generate_report(
         rul_min=rul_min,
         rul_alarm_min=rul_alarm_min,
         rag_cases=rag_cases or [],
+        doc_snippets=doc_snippets,
     )
 
     client = _get_client()
@@ -142,6 +156,7 @@ def generate_report_mock(
     ml_label: int = 0,
     rul_min: float | None = None,
     rul_alarm_min: float = 60.0,
+    doc_snippets: list[str] | None = None,
 ) -> str:
     """API 키 없이 규칙 기반 Mock 보고서 생성 (데모용)."""
     status = (
@@ -169,11 +184,17 @@ def generate_report_mock(
 
     rul_str = f"{rul_min:.0f}분" if rul_min else "측정 불가"
 
+    doc_line = (
+        f"  • {doc_snippets[0].strip()[:80]}..."
+        if doc_snippets else "  • 문서 근거 없음 (RAG-Level2 인덱스 미구축)"
+    )
+
     return (
         f"[현재 상태] {status} — 열화 확률 {ml_prob:.1%}, 예측 잔여수명 {rul_str}\n\n"
         f"[주요 이상 신호]\n" +
         "\n".join(f"  • {a}" for a in anomalies) +
         f"\n\n[정비 권고] {action}\n\n"
         f"[유사 사례 참고] RAG 인덱스 기반 유사 베어링 사례 검색 결과를 참고하세요.\n\n"
+        f"[문서 근거]\n{doc_line}\n\n"
         f"※ 이 보고서는 Mock 모드입니다. ANTHROPIC_API_KEY 설정 시 AI 보고서가 생성됩니다."
     )

@@ -216,13 +216,14 @@ if df.empty:
     st.stop()
 
 # ── 탭 구성 ────────────────────────────────────────────────────────────────────
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📊 데이터 탐색 (demo data loading)",
     "🤖 ML 성능",
     "🔮 DL RUL 예측",
     "🏭 통합 진단 (실시간·CSV 진단)",
     "🔬 DL 아키텍처 비교 (5종)",
     "💡 AI 정비 권고 (LLM)",
+    "🖼️ CNN 이미지 분류",
 ])
 
 # ════════════════════════════════════════════════════════
@@ -972,8 +973,24 @@ with tab6:
             except Exception as _re:
                 st.caption(f"RAG 검색 미지원 (FAISS 미설치 또는 인덱스 없음): {_re}")
 
+            # ── RAG-Level2 정비 지식 문서 검색 (Chroma) ─────────────────────────
+            _doc_snippets: list[str] = []
+            try:
+                from src.femto_doc_rag import retrieve_docs
+                _rul_txt = f"{_rul_val:.0f}분" if _rul_val is not None else "미상"
+                _doc_query = (
+                    f"열화 상태={'열화' if _pred == 1 else '정상'} "
+                    f"h_rms={_sensor_vals.get('h_rms', 0):.2f} "
+                    f"h_kurt={_sensor_vals.get('h_kurt', 0):.2f} "
+                    f"temp={_sensor_vals.get('temp_mean', 0):.1f} "
+                    f"잔여수명={_rul_txt} 상황에서 정비 권고 기준은?"
+                )
+                _doc_snippets = retrieve_docs(_doc_query, k=2)
+            except Exception as _de:
+                st.caption(f"문서 RAG 미지원 (Chroma 미설치 또는 인덱스 없음): {_de}")
+
             # ── 중간 결과 표시 ────────────────────────────────────────────────
-            _c1, _c2, _c3 = st.columns(3)
+            _c1, _c2, _c3, _c4 = st.columns(4)
             with _c1:
                 st.metric("ML 열화 확률", f"{_proba*100:.1f}%")
                 if _pred == 1:
@@ -993,6 +1010,10 @@ with tab6:
                 st.metric("RAG 유사 사례", f"{len(_rag_cases)}건")
                 if _rag_cases:
                     st.caption(f"최유사: {_rag_cases[0]['bearing']} ({_rag_cases[0]['similarity']:.1f}%)")
+            with _c4:
+                st.metric("정비 문서 근거", f"{len(_doc_snippets)}건")
+                if _doc_snippets:
+                    st.caption(f"{_doc_snippets[0][:30].strip()}...")
 
             # ── LLM 보고서 생성 ───────────────────────────────────────────────
             st.divider()
@@ -1005,12 +1026,14 @@ with tab6:
                         ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
                         rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
                         rag_cases=_rag_cases,
+                        doc_snippets=_doc_snippets,
                     )
                 else:
                     _report = generate_report_mock(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred,
                         rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
+                        doc_snippets=_doc_snippets,
                     )
                 st.markdown(
                     f"<div style='background:#f0f7ff;border-left:4px solid #2E75B6;"
@@ -1049,3 +1072,269 @@ with tab6:
 **환경변수**: `ANTHROPIC_API_KEY` 미설정 시 규칙 기반 Mock 보고서 자동 전환
 **RAG**: FAISS IndexFlatIP + 12-dim 특성 벡터 + 코사인 유사도 (`python -m src.femto_rag_search` 로 인덱스 빌드)
         """)
+
+# ════════════════════════════════════════════════════════
+# Tab 7: CNN 이미지 분류
+# ════════════════════════════════════════════════════════
+with tab7:
+    st.header("🖼️ CNN 이미지 분류 — 결함 판정")
+    st.caption("이미지 파일을 업로드하면 CNN 모델이 결함 여부를 판정합니다.")
+
+    # 모델 경로 후보
+    _cnn_candidates = [
+        MODEL_DIR / "casting_defect_cnn.keras",
+        MODEL_DIR / "casting_defect_cnn.h5",
+        MODEL_DIR / "image_cnn.keras",
+        MODEL_DIR / "image_cnn.h5",
+    ]
+    _cnn_model_path = next((p for p in _cnn_candidates if p.exists()), None)
+
+    _gradcam_data = None  # (model, arr, pred_idx, img_resized, h, w) — Grad-CAM용
+    col_upload, col_result = st.columns([1, 1])
+
+    with col_upload:
+        st.subheader("📂 이미지 파일 선택")
+
+        _img_mode = st.radio(
+            "입력 방법",
+            ["📁 파일 업로드", "📦 레포 샘플 불러오기"],
+            horizontal=True,
+            key="cnn_input_mode",
+        )
+
+        _IMG_DIR = ROOT / "demo data" / "Bearing_image_file"
+        _IMG_SAMPLES = {
+            "Stage 1 — 정상  (bearing_stage1_normal.png)":    _IMG_DIR / "bearing_stage1_normal.png",
+            "Stage 2 — 초기 열화  (bearing_stage2_early.png)": _IMG_DIR / "bearing_stage2_early.png",
+            "Stage 3 — 중기 열화  (bearing_stage3_moderate.png)": _IMG_DIR / "bearing_stage3_moderate.png",
+            "Stage 4 — 심각 열화  (bearing_stage4_severe.png)": _IMG_DIR / "bearing_stage4_severe.png",
+            "bearing_normal.png  (정상 베어링)":  _IMG_DIR / "bearing_normal.png",
+            "bearing_defect.png  (불량 베어링)":  _IMG_DIR / "bearing_defect.png",
+        }
+
+        # UploadedFile 호환 래퍼
+        class _RepoImageFile:
+            def __init__(self, path):
+                self._data = Path(path).read_bytes()
+                self.name = Path(path).name
+            def read(self): return self._data
+
+        uploaded = None
+
+        if _img_mode == "📁 파일 업로드":
+            st.session_state.pop("_cnn_repo_img", None)
+            uploaded = st.file_uploader(
+                "JPG / PNG / BMP 파일을 업로드하세요",
+                type=["jpg", "jpeg", "png", "bmp"],
+                help="제조 공정 이미지 파일 (예: 주조 결함 탐지용)",
+            )
+        else:
+            _avail_imgs = {k: v for k, v in _IMG_SAMPLES.items() if v.exists()}
+            if not _avail_imgs:
+                st.warning("레포에 샘플 이미지가 없습니다.")
+            else:
+                _sel_img = st.selectbox("샘플 이미지 선택", list(_avail_imgs.keys()), key="cnn_sample_sel")
+                if st.button("📦 레포 샘플 로드", key="load_sample_img"):
+                    st.session_state["_cnn_repo_img"] = str(_avail_imgs[_sel_img])
+                if "_cnn_repo_img" in st.session_state:
+                    uploaded = _RepoImageFile(st.session_state["_cnn_repo_img"])
+                else:
+                    st.info("위에서 샘플을 선택하고 [레포 샘플 로드] 버튼을 누르세요.")
+
+        if uploaded:
+            # _RepoImageFile: read() 항상 전체 반환 / UploadedFile: 직접 전달(버퍼 소모 방지)
+            _disp = uploaded.read() if isinstance(uploaded, _RepoImageFile) else uploaded
+            st.image(_disp, caption=f"선택: {uploaded.name}", use_container_width=True)
+
+    with col_result:
+        st.subheader("🔍 CNN 판정 결과")
+
+        if uploaded is None:
+            st.info("왼쪽에서 이미지를 업로드하면 CNN 판정이 시작됩니다.")
+        elif _cnn_model_path is None:
+            st.warning(
+                "CNN 이미지 분류 모델이 없습니다.  \n"
+                "아래 경로 중 하나에 모델을 저장하세요:  \n"
+                "- `models/casting_defect_cnn.keras`  \n"
+                "- `models/image_cnn.keras`  \n\n"
+                "**학습 방법**: `python -m src.femto_image_cnn` 실행  \n"
+                "(Casting Defect Dataset 필요)"
+            )
+            # 기본 픽셀 통계 표시 (모델 없어도 이미지 분석)
+            st.divider()
+            st.caption("기본 이미지 통계 (모델 없음 — 참고용)")
+            try:
+                from PIL import Image as PILImage
+                import numpy as np
+                import io
+                img_bytes = uploaded.read()
+                img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+                arr = np.array(img).astype(float)
+                st.metric("평균 밝기", f"{arr.mean():.1f}")
+                st.metric("표준편차", f"{arr.std():.1f}")
+                st.metric("이미지 크기", f"{img.width} × {img.height} px")
+                dark_ratio = float((arr.mean(axis=2) < 80).mean())
+                st.metric("어두운 영역 비율", f"{dark_ratio*100:.1f}%",
+                          help="어두운 영역이 많으면 결함 가능성 높음 (단순 추정)")
+                if dark_ratio > 0.3:
+                    st.error("⚠️ 어두운 영역 비율 높음 — 결함 의심 (CNN 모델로 정밀 판정 필요)")
+                else:
+                    st.success("✅ 이미지 밝기 정상 범위")
+            except Exception as e:
+                st.error(f"이미지 분석 실패: {e}")
+        else:
+            # CNN 모델 로드 & 예측
+            try:
+                import numpy as np
+                from PIL import Image as PILImage
+                import io
+                import tensorflow as tf
+
+                @st.cache_resource
+                def _load_cnn(path: str):
+                    return tf.keras.models.load_model(path)
+
+                cnn_model = _load_cnn(str(_cnn_model_path))
+                inp_shape = cnn_model.input_shape  # (None, H, W, C)
+                target_h  = inp_shape[1] or 224
+                target_w  = inp_shape[2] or 224
+                n_classes = cnn_model.output_shape[-1]
+                CLASS_NAMES = (
+                    ["정상(OK)", "결함(Defect)"] if n_classes == 2
+                    else [f"Class {i}" for i in range(n_classes)]
+                )
+
+                img_bytes = uploaded.read()
+                img = PILImage.open(io.BytesIO(img_bytes)).convert("RGB")
+                img_resized = img.resize((target_w, target_h))
+                arr = np.array(img_resized, dtype=np.float32) / 255.0
+                arr = np.expand_dims(arr, axis=0)
+
+                preds = cnn_model.predict(arr, verbose=0)[0]
+                pred_idx = int(np.argmax(preds))
+                confidence = float(preds[pred_idx])
+                pred_label = CLASS_NAMES[pred_idx] if pred_idx < len(CLASS_NAMES) else f"Class {pred_idx}"
+
+                if "결함" in pred_label or pred_idx > 0:
+                    st.error(f"🔴 판정: **{pred_label}**  ({confidence*100:.1f}%)")
+                else:
+                    st.success(f"🟢 판정: **{pred_label}**  ({confidence*100:.1f}%)")
+
+                st.divider()
+                st.caption("클래스별 확률")
+                prob_data = {CLASS_NAMES[i] if i < len(CLASS_NAMES) else f"Class {i}": float(preds[i])
+                             for i in range(len(preds))}
+                import pandas as pd
+                prob_df = pd.DataFrame({"클래스": list(prob_data.keys()),
+                                        "확률": list(prob_data.values())})
+                st.dataframe(prob_df.style.format({"확률": "{:.4f}"}), use_container_width=True)
+                st.metric("모델", _cnn_model_path.name)
+                st.metric("입력 크기", f"{target_h}×{target_w} px")
+                _gradcam_data = (cnn_model, arr, pred_idx, img_resized, target_h, target_w, confidence, pred_label)
+
+            except Exception as e:
+                st.error(f"CNN 판정 실패: {e}")
+                st.code(str(e))
+
+    # ── Grad-CAM 전체 폭 섹션 ──────────────────────────────────
+    if _gradcam_data is not None:
+        _gc_model, _gc_arr, _gc_pred_idx, _gc_img, _gc_h, _gc_w, _gc_conf, _gc_label = _gradcam_data
+        st.divider()
+        st.subheader("🔥 Grad-CAM 시각화 — CNN이 '어디를 보았는지'")
+        st.caption(
+            "마지막 Conv 레이어의 Feature Map 기울기(Gradient)를 역전파하여 "
+            "예측에 영향을 준 영역을 히트맵으로 표시합니다.  "
+            "**빨간색 = 판정에 가장 중요한 영역 / 파란색 = 덜 중요한 영역**"
+        )
+        try:
+            import tensorflow as tf
+            import numpy as np
+            import matplotlib.pyplot as _plt
+            import matplotlib.cm as _cm
+            from PIL import Image as _PIL
+
+            def _gradcam_k3(_m, _arr, _pred_idx):
+                # Keras 3: conv 직후 watch → 이후 레이어만 tape 추적, with 안에서 gradient() 미호출
+                _lci = None
+                for _i, _l in enumerate(_m.layers):
+                    if isinstance(_l, tf.keras.layers.Conv2D):
+                        _lci = _i
+                if _lci is None:
+                    return None, None
+                with tf.GradientTape() as _tape:
+                    _x = tf.cast(_arr, tf.float32)
+                    _co = None
+                    for _i, _l in enumerate(_m.layers):
+                        if _i == _lci:
+                            _x = _l(_x); _co = _x; _tape.watch(_co)
+                        else:
+                            _x = _l(_x)
+                    _loss = _x[:, _pred_idx]
+                _gr = _tape.gradient(_loss, _co)
+                _pw = tf.reduce_mean(_gr, axis=(0, 1, 2)).numpy()
+                _cam = np.einsum("hwc,c->hw", _co[0].numpy(), _pw)
+                _cam = np.maximum(_cam, 0)
+                if _cam.max() > 0:
+                    _cam /= _cam.max()
+                return _cam, _pw
+
+            _cam, _pooled = _gradcam_k3(_gc_model, _gc_arr, _gc_pred_idx)
+
+            if _cam is None:
+                st.warning("Conv2D 레이어를 찾을 수 없어 Grad-CAM을 생성할 수 없습니다.")
+            else:
+
+                # ④ 원본 크기로 리사이즈
+                _cam_pil    = _PIL.fromarray((_cam * 255).astype(np.uint8)).resize(
+                    (_gc_w, _gc_h), _PIL.BILINEAR
+                )
+                _cam_norm   = np.array(_cam_pil) / 255.0
+
+                # ⑤ jet 컬러맵 적용 + 원본과 오버레이
+                _heatmap_rgb = _cm.get_cmap("jet")(_cam_norm)[:, :, :3]
+                _orig_arr    = np.array(_gc_img).astype(float) / 255.0
+                _overlay     = np.clip(0.55 * _orig_arr + 0.45 * _heatmap_rgb, 0, 1)
+
+                # ⑥ 시각화 — 원본 / 히트맵 / 오버레이
+                _fig, _axes = _plt.subplots(1, 3, figsize=(13, 4))
+                _titles = [
+                    f"(1) Original Image\n({_gc_label})",
+                    "(2) Grad-CAM Heatmap",
+                    f"(3) Overlay\nPred Score: {_gc_conf:.4f}",
+                ]
+                _imgs   = [
+                    np.array(_gc_img),
+                    _cam_norm,
+                    (_overlay * 255).astype(np.uint8),
+                ]
+                _cmaps  = [None, "jet", None]
+                for _ax, _im, _ti, _cmp in zip(_axes, _imgs, _titles, _cmaps):
+                    _ax.imshow(_im, cmap=_cmp)
+                    _ax.set_title(_ti, fontsize=11, pad=6)
+                    _ax.axis("off")
+                _plt.colorbar(
+                    _plt.cm.ScalarMappable(cmap="jet"), ax=_axes[1],
+                    fraction=0.046, pad=0.04, label="중요도"
+                )
+                _plt.tight_layout()
+                st.pyplot(_fig)
+                _plt.close(_fig)
+
+                # ⑦ 채널 중요도 상위 5개 표시
+                with st.expander("📊 채널별 중요도 상세 (상위 5개)"):
+                    _abs_pw = np.abs(_pooled)
+                    _top_idx = np.argsort(_abs_pw)[::-1][:5]
+                    _rel_pw = _abs_pw[_top_idx] / (_abs_pw.max() + 1e-10) * 100
+                    import pandas as _pd2
+                    st.dataframe(
+                        _pd2.DataFrame({
+                            "채널 번호": _top_idx,
+                            "기울기 평균 (raw)": [f"{v:.3e}" for v in _pooled[_top_idx]],
+                            "상대 중요도 (%)": _rel_pw.round(1),
+                        }),
+                        use_container_width=True,
+                    )
+                    st.caption("※ 마지막 Conv 레이어 기준 | 양수=강화·음수=억제 | 상대 중요도=|기울기|÷최대값×100")
+
+        except Exception as _gc_err:
+            st.warning(f"Grad-CAM 생성 실패: {_gc_err}")

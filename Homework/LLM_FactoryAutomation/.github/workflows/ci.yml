@@ -1,0 +1,47 @@
+﻿name: CI — DL_FactoryAutomation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "Homework/DL_FactoryAutomation/**"
+  pull_request:
+    paths:
+      - "Homework/DL_FactoryAutomation/**"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Homework/DL_FactoryAutomation
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Install deps (no TF for CI speed)
+        run: |
+          pip install numpy pandas scikit-learn pytest ruff
+
+      - name: Ruff lint
+        run: ruff check src/ tests/ --ignore E501
+
+      - name: Generate test data (small)
+        run: |
+          python -c "
+          import sys; sys.path.insert(0, '.')
+          from src.generate_ts_data import generate_dataset, save_sequences
+          from src.config import TRAIN_DIR, TEST_DIR, DEMO_DIR
+          runs = generate_dataset(50)
+          save_sequences(runs[:40], TRAIN_DIR)
+          save_sequences(runs[40:], TEST_DIR)
+          demo = generate_dataset(10, seed_offset=9999)
+          save_sequences(demo, DEMO_DIR, prefix='demo')
+          print('CI 데이터 생성 완료')
+          "
+
+      - name: Pytest
+        run: pytest tests/ -v
