@@ -25,6 +25,19 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
      (LLM 진단 보고서 기능용. 미설정 시 Mock 모드로 자동 폴백)
 4. **Deploy** 클릭 → 수 분 후 `https://[앱이름].streamlit.app` 형태의 영구 URL 발급
 
+## Secrets 설정 방법 (2가지)
+
+`ANTHROPIC_API_KEY` 같은 값은 아래 두 경로 중 상황에 맞는 쪽으로 넣습니다. 두 방법 모두 최종적으로 Python 코드에서는 `os.environ.get("ANTHROPIC_API_KEY", "")`로 동일하게 읽힙니다.
+
+| 방법 | 대상 | 절차 |
+| --- | --- | --- |
+| **① Cloud 대시보드에서 직접 입력** (배포/운영용) | 실제 배포된 앱 | share.streamlit.io → 앱 선택 → 우측 하단 **⋮(점 3개)** → **Settings** → **Secrets** 탭 → 텍스트박스에 TOML 형식으로 붙여넣기(`ANTHROPIC_API_KEY = "sk-ant-..."`) → **Save**. 저장 즉시 앱이 자동 재시작되며 값이 바로 반영됨 |
+| **② 로컬 `.streamlit/secrets.toml` 파일** (로컬 개발/테스트용) | 내 PC에서 `streamlit run`으로 실행할 때 | 프로젝트 루트에 `.streamlit/secrets.toml` 파일을 만들고 같은 내용을 저장. Streamlit이 로컬 실행 시 자동으로 읽어 `os.environ`처럼 노출됨 |
+
+**차이**: ①은 Cloud에 배포된 앱 자체에 주입되는 값(팀/공유 배포용), ②는 로컬 실행 시에만 쓰이는 값(개인 PC별로 각자 보유).
+
+**주의**: `.streamlit/secrets.toml`은 실제 키 값을 담고 있으므로 **절대 git에 커밋하면 안 됩니다** — 사용하려면 `.gitignore`에 `.streamlit/secrets.toml`을 추가한 뒤 로컬에만 두세요(현재 프로젝트 `.gitignore`에는 아직 이 항목이 없습니다).
+
 ## 알려진 제약사항
 
 - `femto_rf_rul.pkl`(72MB, RUL 회귀 모델 중 하나)은 리포지토리에서 제외되어 있어
