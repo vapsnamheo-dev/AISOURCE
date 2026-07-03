@@ -44,7 +44,7 @@ PERSIST_DIRECTORY = ROOT / "models" / "chroma_store"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL_NAME = "gemma4:e2b"
-OLLAMA_TEMPERATURE = 0.3  # RAG는 사실 기반 답변이 필요하므로 0.5 미만으로 낮게 설정
+OLLAMA_TEMPERATURE = 0.0  # RAG는 사실 기반 답변만 해야 하므로 0(결정론적 출력)으로 설정
 
 RAG_PROMPT = ChatPromptTemplate.from_template(
     """당신은 베어링 설비 예지보전(PdM) 정비 지식 도우미입니다.
