@@ -46,9 +46,17 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
 - `femto_rf_rul.pkl`(72MB, RUL 회귀 모델 중 하나)은 리포지토리에서 제외되어 있어
   해당 모델을 직접 참조하는 기능은 Cloud에서 동작하지 않습니다.
   (`femto_lstm_rul.keras`는 포함되어 있어 LSTM 기반 RUL 예측은 정상 동작)
-- RAG Level 2(`femto_doc_rag.py`)의 `ask()` 함수는 로컬 Ollama 서버가 필요해
-  Cloud 환경에서는 동작하지 않습니다. Claude API 기반 `retrieve_docs()` 경로(문서 청크 검색만)는
-  Ollama 없이도 정상 동작합니다.
+- RAG Level 2(`femto_doc_rag.py`)의 `ask()` 함수(`streamlit_femto.py`의 "🤖 AI 답변 생성" 버튼)는
+  로컬 Ollama 서버(`http://localhost:11434`)가 필요해 Cloud 환경에서는
+  `HTTPConnectionPool ... Connection refused` 에러가 정상적으로 발생합니다(버그 아님, 의도된
+  동작 — Streamlit Community Cloud는 Ollama 같은 상시 백그라운드 프로세스를 실행할 수 없는
+  샌드박스 환경이라 근본적으로 Ollama 자체를 Cloud에 띄울 수 없습니다). 문서 청크 검색만 하는
+  `retrieve_docs()` 경로는 Ollama 없이도 정상 동작합니다.
+  - **Cloud에서도 AI 답변을 받고 싶다면**: Ollama를 Cloud에서 직접 실행하는 대신, 이미 LLM
+    진단 보고서용으로 쓰는 `ANTHROPIC_API_KEY`(Claude API)를 `ask()`의 대체 백엔드로 써서
+    "Ollama 연결 실패 시 Claude API로 자동 폴백"하는 방식이 현실적입니다(외부에 별도 Ollama
+    서버를 상시 띄워 두는 방법도 있으나 운영 부담·비용이 커서 비권장). 필요 시 별도 작업으로
+    진행하세요.
 - `data/` 폴더는 Git에서 제외되어 있으나, 앱이 최초 실행 시 `femto_preprocess`를 자동 실행하여
   `data/FEMTO_processed/*.csv`를 재생성합니다 (최초 1회 1~2분 소요).
   **주의**: 이때 VIF 분석으로 `selected_features.csv`(피처 목록)도 함께 재생성되는데, Cloud의
