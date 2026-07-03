@@ -329,7 +329,7 @@ with tab2:
                 return "background-color: #FFFFCC"
             return "background-color: #CCFFCC"
 
-        styled = vif_df.style.applymap(_color_vif, subset=["VIF"])
+        styled = vif_df.style.map(_color_vif, subset=["VIF"])
         st.dataframe(styled, use_container_width=True)
         st.caption("VIF: 양호(녹색, <5) / 주의(노랑, 5~10) / 심각(빨강, ≥10)")
 
