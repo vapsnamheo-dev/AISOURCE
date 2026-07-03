@@ -7,7 +7,13 @@ src/femto_rag_search.py(Level 1, FAISS + 12-dim 수치 특성 벡터)와 달리
 질의응답(RAG)하는 "문서 기반" 검색을 담당한다.
 
 사전 설치:
-    pip install langchain langchain-community chromadb sentence-transformers langchain-text-splitters
+    pip install langchain langchain-community chromadb sentence-transformers langchain-text-splitters rank_bm25
+
+Hybrid RAG (v0.6):
+    retrieve_docs()/ask()는 기본적으로 BM25(키워드 매칭) + Chroma 벡터 검색을
+    EnsembleRetriever로 결합한다. "40도 초과", "1.5배" 같은 정확한 수치·임계값
+    표현은 BM25가, 의미적으로 유사한 문장은 벡터 검색이 담당해 서로 보완한다.
+    use_hybrid=False로 넘기면 기존처럼 벡터 검색만 사용한다.
 
 Ollama 사전 준비 (로컬 실행):
     ollama pull gemma2
@@ -136,27 +142,68 @@ def _format_docs(docs) -> str:
     return "\n\n".join(d.page_content for d in docs)
 
 
-def retrieve_docs(question: str, k: int = 3, vectorstore: Chroma | None = None) -> list[str]:
+def _get_retriever(vectorstore: Chroma, k: int, use_hybrid: bool):
+    """벡터 검색기, 또는 BM25+벡터를 결합한 Hybrid 검색기를 반환한다."""
+    vector_retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+    if not use_hybrid:
+        return vector_retriever
+
+    try:
+        # langchain>=1.0: EnsembleRetriever가 langchain_classic으로 이동
+        from langchain_classic.retrievers import EnsembleRetriever
+    except ImportError:
+        from langchain.retrievers import EnsembleRetriever
+    from langchain_community.retrievers import BM25Retriever
+
+    stored = vectorstore.get(include=["documents"])
+    bm25_texts = [t for t in stored.get("documents", []) if t and t.strip()]
+    if not bm25_texts:
+        # 인덱스에 문서가 없으면 BM25를 구성할 수 없으므로 벡터 검색만 사용
+        return vector_retriever
+
+    bm25_retriever = BM25Retriever.from_texts(bm25_texts)
+    bm25_retriever.k = k
+
+    return EnsembleRetriever(
+        retrievers=[bm25_retriever, vector_retriever],
+        weights=[0.5, 0.5],  # 키워드(BM25) 50% + 의미(벡터) 50%
+    )
+
+
+def retrieve_docs(
+    question: str,
+    k: int = 3,
+    vectorstore: Chroma | None = None,
+    use_hybrid: bool = True,
+) -> list[str]:
     """질문과 관련된 정비 지식 문서 청크만 검색해 반환한다 (Ollama 불필요).
 
     femto_llm_report.py 등 다른 LLM(Claude API 등)에 검색 결과만 컨텍스트로
     넘기고 싶을 때 사용한다. ask()와 달리 로컬 LLM 호출이 없어 가볍고,
     Ollama 서버가 꺼져 있어도 동작한다.
+
+    use_hybrid=True(기본값)면 BM25(키워드)+벡터 검색을 결합한 Hybrid RAG를
+    사용한다. 수치·임계값 등 정확한 표현이 포함된 질문의 검색 정확도가 오른다.
     """
     if vectorstore is None:
         vectorstore = load_index()
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+    retriever = _get_retriever(vectorstore, k=k, use_hybrid=use_hybrid)
     docs = retriever.invoke(question)
     return [d.page_content for d in docs]
 
 
-def ask(question: str, k: int = 3, vectorstore: Chroma | None = None) -> str:
+def ask(
+    question: str,
+    k: int = 3,
+    vectorstore: Chroma | None = None,
+    use_hybrid: bool = True,
+) -> str:
     """질문에 대해 문서 기반 RAG 답변을 생성한다."""
     if vectorstore is None:
         vectorstore = load_index()
 
-    retriever = vectorstore.as_retriever(search_kwargs={"k": k})
+    retriever = _get_retriever(vectorstore, k=k, use_hybrid=use_hybrid)
     llm = Ollama(base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL_NAME, temperature=OLLAMA_TEMPERATURE)
 
     chain = (
