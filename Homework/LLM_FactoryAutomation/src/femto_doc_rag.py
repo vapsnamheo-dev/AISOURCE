@@ -44,6 +44,7 @@ PERSIST_DIRECTORY = ROOT / "models" / "chroma_store"
 EMBEDDING_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
 OLLAMA_BASE_URL = "http://localhost:11434"
 OLLAMA_MODEL_NAME = "gemma4:e2b"
+OLLAMA_TEMPERATURE = 0.3  # RAG는 사실 기반 답변이 필요하므로 0.5 미만으로 낮게 설정
 
 RAG_PROMPT = ChatPromptTemplate.from_template(
     """당신은 베어링 설비 예지보전(PdM) 정비 지식 도우미입니다.
@@ -145,7 +146,7 @@ def ask(question: str, k: int = 3, vectorstore: Chroma | None = None) -> str:
         vectorstore = load_index()
 
     retriever = vectorstore.as_retriever(search_kwargs={"k": k})
-    llm = Ollama(base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL_NAME)
+    llm = Ollama(base_url=OLLAMA_BASE_URL, model=OLLAMA_MODEL_NAME, temperature=OLLAMA_TEMPERATURE)
 
     chain = (
         {"context": retriever | _format_docs, "question": RunnablePassthrough()}
