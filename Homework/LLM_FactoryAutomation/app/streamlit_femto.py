@@ -49,8 +49,8 @@ st.set_page_config(
     page_icon="⚙️",
     layout="wide",
 )
-st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL 통합 진단")
-st.caption("ML만 적용시(열화 분류) + LSTM(잔여수명 예측) 결합 시스템")
+st.title("⚙️ FEMTO-ST 베어링 예지보전 — ML+DL + LLM 통합 진단")
+st.caption("열화 분류(ML) + 잔여수명 예측(DL) + AI 정비 권고 (LLM) 결합 시스템")
 
 # ── ML 프로젝트 링크 ──────────────────────────────────────────────────────────
 _col_link, _col_spacer = st.columns([1, 5])
@@ -1099,7 +1099,18 @@ with tab6:
                     unsafe_allow_html=True,
                 )
             except Exception as _le:
-                st.error(f"보고서 생성 오류: {_le}")
+                _le_msg = str(_le)
+                if "credit balance is too low" in _le_msg:
+                    st.error(
+                        "보고서 생성 오류: Anthropic 계정의 크레딧 잔액이 부족합니다.\n\n"
+                        "코드 버그가 아니라 결제 문제입니다 — "
+                        "https://console.anthropic.com 접속 → **Plans & Billing** → "
+                        "크레딧 충전 또는 결제수단 등록 후 다시 시도하세요.\n\n"
+                        "충전 전까지는 사이드바의 'ANTHROPIC_API_KEY 사용' 스위치를 꺼서 "
+                        "Mock 모드로 이용할 수 있습니다."
+                    )
+                else:
+                    st.error(f"보고서 생성 오류: {_le_msg}")
 
     # ── LLM 아키텍처 설명 ─────────────────────────────────────────────────────
     with st.expander("📐 Proposal A — LLM 통합 아키텍처 설명"):
