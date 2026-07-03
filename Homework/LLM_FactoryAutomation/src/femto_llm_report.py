@@ -17,8 +17,23 @@ Structured Output (v0.5):
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+# claude-haiku-4-5 공식 단가(2026-06-24 기준, $/1M 토큰). 다른 모델을 쓰면 이 값은
+# 참고용 추정치가 된다.
+_HAIKU_INPUT_PRICE_PER_MTOK = 1.00
+_HAIKU_OUTPUT_PRICE_PER_MTOK = 5.00
+
+
+def _estimate_cost_usd(input_tokens: int, output_tokens: int) -> float:
+    return (
+        input_tokens / 1_000_000 * _HAIKU_INPUT_PRICE_PER_MTOK
+        + output_tokens / 1_000_000 * _HAIKU_OUTPUT_PRICE_PER_MTOK
+    )
 
 
 def _get_client():
@@ -115,7 +130,8 @@ def generate_report(
     doc_snippets: list[str] | None = None,
     model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 600,
-) -> str:
+    return_usage: bool = False,
+) -> str | tuple[str, dict[str, Any]]:
     """
     LLM 진단 보고서 생성.
 
@@ -131,10 +147,12 @@ def generate_report(
     doc_snippets : femto_doc_rag.retrieve_docs() 반환값 (RAG-Level2, 정비 지식 문서)
     model        : Claude 모델 ID
     max_tokens   : 최대 출력 토큰
+    return_usage : True면 (보고서, usage딕셔너리) 튜플을 반환한다.
+                   usage = {"input_tokens", "output_tokens", "cost_usd"}
 
     Returns
     -------
-    str: 자연어 진단 보고서
+    str, 또는 return_usage=True일 때 tuple[str, dict]
     """
     context = _build_context(
         sensor=sensor,
@@ -154,7 +172,23 @@ def generate_report(
         system=SYSTEM_PROMPT,
         messages=[{"role": "user", "content": context}],
     )
-    return response.content[0].text
+    text = response.content[0].text
+
+    input_tokens = response.usage.input_tokens
+    output_tokens = response.usage.output_tokens
+    cost_usd = _estimate_cost_usd(input_tokens, output_tokens)
+    logger.info(
+        "LLM 보고서 생성 완료 model=%s input_tokens=%d output_tokens=%d cost_usd=%.5f",
+        model, input_tokens, output_tokens, cost_usd,
+    )
+
+    if return_usage:
+        return text, {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": cost_usd,
+        }
+    return text
 
 
 def generate_report_mock(
