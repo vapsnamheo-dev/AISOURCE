@@ -886,13 +886,13 @@ with tab6:
     import os as _os
     _has_api_key = bool(_os.environ.get("ANTHROPIC_API_KEY", ""))
 
-    # 과금 방지 스위치: 켜야만 실제 Claude API를 호출한다. 꺼져 있으면(기본값)
-    # API 키가 있어도 항상 Mock 모드로 동작해 비용이 발생하지 않는다.
+    # ANTHROPIC_API_KEY 사용 여부 스위치. ON(기본값)=실제 Claude API 호출(과금 발생),
+    # OFF=키가 있어도 항상 Mock 모드로 동작(과금 없음).
     _use_real_ai = st.sidebar.checkbox(
-        "🔴 실제 AI 호출 사용 (Claude API 과금 발생)",
-        value=False,
-        help="꺼져 있으면 API 키가 있어도 항상 Mock 모드로 동작해 과금되지 않습니다. "
-             "켜야만 실제 Claude API를 호출합니다.",
+        "ANTHROPIC_API_KEY 사용 (ON=실제 AI 호출·과금 / OFF=Mock 모드·무료)",
+        value=True,
+        help="ON이면 ANTHROPIC_API_KEY로 실제 Claude API를 호출해 과금이 발생합니다. "
+             "OFF로 끄면 키가 있어도 항상 Mock(규칙 기반) 모드로 동작해 과금되지 않습니다.",
     )
     _show_ai_cost = st.sidebar.checkbox(
         "AI 비용 정보 화면에 표시",
@@ -901,9 +901,9 @@ with tab6:
     )
 
     if _has_api_key and _use_real_ai:
-        st.success("✅ ANTHROPIC_API_KEY 감지됨 + 실제 AI 호출 켜짐 — 과금 발생")
+        st.success("✅ ANTHROPIC_API_KEY 사용: ON — 실제 AI 호출 (과금 발생)")
     elif _has_api_key and not _use_real_ai:
-        st.info("ℹ️ ANTHROPIC_API_KEY는 있지만 '실제 AI 호출' 스위치가 꺼져 있어 Mock 모드로 동작합니다 (과금 없음).")
+        st.info("ℹ️ ANTHROPIC_API_KEY 사용: OFF — 키는 있지만 Mock 모드로 동작합니다 (과금 없음).")
     else:
         st.warning(
             "⚠️ ANTHROPIC_API_KEY 미설정 — Mock 모드로 실행됩니다.  \n"

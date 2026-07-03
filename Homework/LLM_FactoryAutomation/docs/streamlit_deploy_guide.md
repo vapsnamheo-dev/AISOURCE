@@ -39,7 +39,20 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
 
 **차이**: ①은 Cloud에 배포된 앱 자체에 주입되는 값(팀/공유 배포용), ②는 로컬 실행 시에만 쓰이는 값(개인 PC별로 각자 보유).
 
-**주의**: `.streamlit/secrets.toml`은 실제 키 값을 담고 있으므로 **절대 git에 커밋하면 안 됩니다** — 사용하려면 `.gitignore`에 `.streamlit/secrets.toml`을 추가한 뒤 로컬에만 두세요(현재 프로젝트 `.gitignore`에는 아직 이 항목이 없습니다).
+**주의**: `.streamlit/secrets.toml`은 실제 키 값을 담고 있으므로 **절대 git에 커밋하면 안 됩니다** — `.gitignore`에 `.streamlit/secrets.toml`이 이미 추가되어 있습니다.
+
+## ANTHROPIC_API_KEY 사용 on/off 스위치 (과금 방지)
+
+`app/streamlit_femto.py`의 "AI 정비 권고 보고서" 섹션(사이드바)에 **"ANTHROPIC_API_KEY 사용"** 체크박스가 있습니다.
+
+| 상태 | 동작 | 과금 |
+| --- | --- | --- |
+| **ON**(기본값) | `ANTHROPIC_API_KEY`가 설정돼 있으면 실제 Claude API(`generate_report()`)를 호출해 진짜 AI 보고서 생성 | 발생 |
+| **OFF** | 키가 설정돼 있어도 항상 Mock 모드(`generate_report_mock()`, 규칙 기반)로 동작 | 없음 |
+
+- 실제 호출 시(ON) 화면에 "AI 비용 정보 화면에 표시" 토글(기본 ON)로 토큰 수·예상 비용을 바로 확인할 수 있고, 같은 정보가 Python `logging`으로도 기록됩니다(`src/femto_llm_report.py`의 `logger.info(...)`).
+- Secrets에 키를 넣어도 즉시 과금되는 게 아니라, **이 스위치가 ON이고 실제로 보고서 생성 버튼을 눌러야만** API가 호출됩니다.
+- 데모·시연처럼 과금을 원치 않는 상황에서는 이 스위치를 OFF로 두면 키를 지우지 않고도 안전하게 Mock 모드로 동작합니다.
 
 ## 알려진 제약사항
 
