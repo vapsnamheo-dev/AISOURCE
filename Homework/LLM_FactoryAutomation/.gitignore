@@ -2,6 +2,7 @@
 *.py[cod]
 .venv/
 .env
+.streamlit/secrets.toml
 .pytest_cache/
 .ruff_cache/
 
