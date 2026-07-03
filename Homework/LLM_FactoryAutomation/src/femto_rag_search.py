@@ -32,16 +32,17 @@ SCALER_PATH = MODEL_DIR / "femto_scaler.pkl"
 SEL_PATH    = PROCESSED_DIR / "selected_features.csv"
 FEAT_PATH   = PROCESSED_DIR / "femto_features.csv"
 
+# models/femto_scaler.pkl(StandardScaler)은 ML 분류기와 공유하는 아티팩트로,
+# 고정된 9개 기본 센서 피처로 학습되어 있다(n_features_in_ == 9). data/FEMTO_processed/
+# selected_features.csv는 배포 환경마다 VIF 분석으로 재생성되어 피처 개수가 달라질 수
+# 있으므로, scaler.transform()에 넣는 입력은 항상 이 고정 목록을 써야 한다.
 FALLBACK_FEATURES = [
     "h_rms", "h_kurt", "h_skew", "h_crest",
-    "v_rms", "v_kurt", "v_skew", "v_crest",
-    "temp_mean", "energy", "health_idx", "rms_ratio",
+    "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
 ]
 
 
 def _load_feature_list() -> list[str]:
-    if SEL_PATH.exists():
-        return pd.read_csv(SEL_PATH)["feature"].tolist()
     return FALLBACK_FEATURES
 
 
@@ -83,6 +84,10 @@ def build_index(verbose: bool = True) -> None:
         with open(SCALER_PATH, "wb") as f:
             pickle.dump(scaler, f)
 
+    # faiss.normalize_L2는 C-contiguous 배열을 요구함(scaler.transform 결과가
+    # 비연속 배열일 수 있음)
+    X_scaled = np.ascontiguousarray(X_scaled, dtype="float32")
+
     # L2 정규화 → 내적 = 코사인 유사도
     faiss.normalize_L2(X_scaled)
 
@@ -112,13 +117,11 @@ def build_index(verbose: bool = True) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def load_index():
-    """저장된 FAISS 인덱스 + 메타 + 스케일러를 반환한다."""
+    """저장된 FAISS 인덱스 + 메타 + 스케일러를 반환한다. 없으면 새로 빌드한다."""
     import faiss
 
     if not INDEX_PATH.exists() or not META_PATH.exists():
-        raise FileNotFoundError(
-            "인덱스 없음. 먼저 실행하세요:\n  python -m src.femto_rag_search"
-        )
+        build_index(verbose=True)
 
     index = faiss.read_index(str(INDEX_PATH))
     with open(META_PATH, "rb") as f:
