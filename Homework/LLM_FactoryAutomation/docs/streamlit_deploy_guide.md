@@ -6,7 +6,8 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
 
 - GitHub 리포지토리: https://github.com/vapsnamheo-dev/AISOURCE (main 브랜치)
 - 릴리스: `llm-factory-automation-v0.5` (draft)
-- 모델 아티팩트: `models/` 대부분 추적됨 (단, `femto_rf_rul.pkl` 72MB는 GitHub 용량 문제로 제외)
+- 모델 아티팩트: `models/` 대부분 추적됨 (단, `femto_rf_rul.pkl` 72MB는 GitHub 용량 문제로 제외).
+  `models/chroma_store/`(RAG-Level2 벡터DB 바이너리)도 git에 커밋되어 있음 — 향후 용량 문제 발생 시 확인 대상
 
 ## 배포 절차
 
@@ -24,6 +25,8 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
      ```
      (LLM 진단 보고서 기능용. 미설정 시 Mock 모드로 자동 폴백)
 4. **Deploy** 클릭 → 수 분 후 `https://[앱이름].streamlit.app` 형태의 영구 URL 발급
+
+**재배포가 안 반영될 때**: main에 push하면 보통 자동으로 재배포되지만, 가끔 캐시가 남아 반영이 늦는 경우 앱 우측 하단 **⋮** → **Manage app** → **Reboot app**으로 강제 재시작할 수 있습니다.
 
 ## Secrets 설정 방법 (2가지)
 
@@ -48,6 +51,17 @@ FEMTO-ST 베어링 예지보전 프로젝트를 share.streamlit.io에 배포하�
   Ollama 없이도 정상 동작합니다.
 - `data/` 폴더는 Git에서 제외되어 있으나, 앱이 최초 실행 시 `femto_preprocess`를 자동 실행하여
   `data/FEMTO_processed/*.csv`를 재생성합니다 (최초 1회 1~2분 소요).
+  **주의**: 이때 VIF 분석으로 `selected_features.csv`(피처 목록)도 함께 재생성되는데, Cloud의
+  데모 데이터가 로컬과 달라 VIF 계산 결과(선택되는 피처 개수·목록)가 로컬과 다르게 나올 수
+  있습니다. `models/femto_scaler.pkl` 등 사전 학습된 아티팩트는 **고정된 9개 기본 센서 피처**로
+  학습되어 있으므로, ML/DL 예측 코드가 이 동적 목록을 그대로 신뢰하면 `"X has N features,
+  expecting 9"` 같은 개수 불일치 에러가 날 수 있습니다(2026-07-03 발생·수정 이력:
+  `app/streamlit_femto.py`의 `BASE_ML_FEATURES` 고정 목록 사용으로 해결). 비슷한 에러가 다시
+  보이면 이 문서의 이 항목을 먼저 확인하세요.
+- `requirements.txt`/`app/requirements.txt`의 `pandas>=2.0`처럼 **상한 없는 버전 지정**이 많아,
+  Cloud가 배포 시점에 로컬보다 최신 버전을 설치하면서 로컬-Cloud 간 동작 차이(예: pandas
+  `Styler.applymap` 제거로 인한 `AttributeError`)가 발생할 수 있습니다. 재현이 안 되는 Cloud
+  전용 에러가 나면 라이브러리 버전 차이부터 의심하세요.
 
 ## 로컬 실행 (배포 전 확인용)
 
