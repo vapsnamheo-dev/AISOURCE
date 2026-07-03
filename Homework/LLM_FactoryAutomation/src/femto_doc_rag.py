@@ -70,6 +70,11 @@ def _load_embeddings() -> HuggingFaceEmbeddings:
 
 def build_index(verbose: bool = True) -> Chroma:
     """정비 지식 문서를 청크 분할·임베딩하여 Chroma 벡터 DB를 (재)구축한다."""
+    if not TEXT_FILE_PATH.parent.exists():
+        raise FileNotFoundError(
+            f"문서 폴더 없음: {TEXT_FILE_PATH.parent} — 폴더를 생성하고 "
+            f"{TEXT_FILE_PATH.name}을(를) 넣어주세요."
+        )
     if not TEXT_FILE_PATH.exists():
         raise FileNotFoundError(f"문서 없음: {TEXT_FILE_PATH}")
 
@@ -81,6 +86,9 @@ def build_index(verbose: bool = True) -> Chroma:
     loader = TextLoader(str(TEXT_FILE_PATH), encoding="utf-8")
     documents = loader.load()
 
+    if not documents or not any(d.page_content.strip() for d in documents):
+        raise ValueError(f"문서 내용이 비어 있습니다: {TEXT_FILE_PATH}")
+
     text_splitter = RecursiveCharacterTextSplitter(
         # 청크 크기를 늘려 더 많은 컨텍스트가 포함되도록 함
         chunk_size=500,
@@ -88,6 +96,9 @@ def build_index(verbose: bool = True) -> Chroma:
         length_function=len,
     )
     texts = text_splitter.split_documents(documents)
+
+    if not texts:
+        raise ValueError(f"청크 분할 결과가 비어 있습니다: {TEXT_FILE_PATH}")
 
     vectorstore = Chroma.from_documents(
         texts,

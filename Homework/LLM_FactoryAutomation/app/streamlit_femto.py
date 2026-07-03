@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import pickle
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -916,6 +917,12 @@ with tab6:
     st.subheader("2️⃣ AI 보고서 생성")
 
     if st.button("🤖 AI 정비 권고 보고서 생성", type="primary", key="llm_generate"):
+        # 세션 상태에 진단 완료 여부를 저장해, 아래 중첩된 'AI 답변 생성' 버튼을
+        # 클릭했을 때(재실행 시 이 버튼의 클릭 상태는 False로 초기화됨) 진단
+        # 결과 블록 전체가 사라지지 않고 유지되도록 한다.
+        st.session_state["_femto_llm_diag_generated"] = True
+
+    if st.session_state.get("_femto_llm_diag_generated"):
 
         with st.spinner("진단 중..."):
 
@@ -975,6 +982,7 @@ with tab6:
 
             # ── RAG-Level2 정비 지식 문서 검색 (Chroma) ─────────────────────────
             _doc_snippets: list[str] = []
+            _doc_query: str | None = None
             try:
                 from src.femto_doc_rag import retrieve_docs
                 _rul_txt = f"{_rul_val:.0f}분" if _rul_val is not None else "미상"
@@ -1014,6 +1022,32 @@ with tab6:
                 st.metric("정비 문서 근거", f"{len(_doc_snippets)}건")
                 if _doc_snippets:
                     st.caption(f"{_doc_snippets[0][:30].strip()}...")
+
+            # ── RAG-Level2 LLM 자연어 답변 (선택, 로컬 Ollama 전용) ──────────────
+            with st.expander("🤖 AI 답변 생성 (RAG-Level2, 로컬 Ollama 전용)"):
+                st.caption(
+                    "로컬 Ollama 서버(gemma4:e2b, temperature=0.3)를 호출해 정비 지식 문서 "
+                    "기반 자연어 답변을 생성합니다. 클라우드 문서 검색(위 4개 지표)과 달리 "
+                    "**매 요청마다 로컬 LLM 추론이 실행되어 응답까지 수 초~수십 초가 걸리는 "
+                    "느린(블로킹) 호출**이며, Ollama가 없는 Streamlit Cloud 등 배포 환경에서는 "
+                    "동작하지 않습니다(로컬 실행 전용)."
+                )
+                if _doc_query is None:
+                    st.caption("문서 검색이 먼저 성공해야 사용할 수 있습니다 (위 '정비 문서 근거' 참고).")
+                elif st.button("AI 답변 생성", key="doc_rag_ask_btn"):
+                    with st.spinner("로컬 Ollama(gemma4:e2b) 응답 생성 중... (수 초~수십 초 소요)"):
+                        try:
+                            from src.femto_doc_rag import ask as _doc_rag_ask
+                            _t0 = time.time()
+                            _answer = _doc_rag_ask(_doc_query)
+                            _elapsed = time.time() - _t0
+                            st.success(f"응답 시간: {_elapsed:.1f}초")
+                            st.markdown(_answer)
+                        except Exception as _ae:
+                            st.error(
+                                f"AI 답변 생성 실패 — 로컬 Ollama 서버(http://localhost:11434)가 "
+                                f"실행 중인지 확인하세요: {_ae}"
+                            )
 
             # ── LLM 보고서 생성 ───────────────────────────────────────────────
             st.divider()
