@@ -35,6 +35,15 @@ ROOT = Path(__file__).resolve().parent.parent
 PROCESSED_DIR = ROOT / "data" / "FEMTO_processed"
 MODEL_DIR = ROOT / "models"
 
+# ml_scaler(models/femto_scaler.pkl) 등 사전 학습된 아티팩트가 고정한 9-피처 스키마.
+# data/FEMTO_processed/selected_features.csv는 배포 환경마다 VIF 분석으로 새로
+# 생성되어 피처 개수·순서가 달라질 수 있으므로(예: Cloud 재배포 시 8개로 축소),
+# 슬라이더 입력 기반 단일/배치 예측에는 이 고정 목록만 사용한다.
+BASE_ML_FEATURES = [
+    "h_rms", "h_kurt", "h_skew", "h_crest",
+    "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
+]
+
 st.set_page_config(
     page_title="FEMTO-ST 베어링 예지보전",
     page_icon="⚙️",
@@ -551,10 +560,7 @@ with tab4:
                     "health_idx": 1.0 / (1.0 + h_kurt + v_kurt),
                     "rms_ratio": h_rms / (v_rms + 1e-9),
                 }
-                _feat_list = features if features else [
-                    "h_rms", "h_kurt", "h_skew", "h_crest",
-                    "v_rms", "v_kurt", "v_skew", "v_crest", "temp_mean",
-                ]
+                _feat_list = BASE_ML_FEATURES
                 input_vals = np.array([[feature_values.get(f, 0.0) for f in _feat_list]])
 
                 try:
@@ -663,7 +669,7 @@ with tab4:
                         if "rms_ratio" not in up_df.columns:
                             up_df["rms_ratio"] = up_df["h_rms"] / (up_df["v_rms"] + 1e-9)
 
-                        _feat_list = features if features else REQUIRED + ["temp_mean"]
+                        _feat_list = BASE_ML_FEATURES
                         X_up = up_df[[f for f in _feat_list if f in up_df.columns]].fillna(0).values
 
                         if st.button("일괄 진단 실행", type="primary", key="batch_run"):
@@ -930,10 +936,7 @@ with tab6:
             _proba, _pred = 0.0, 0
             if ml_model is not None:
                 try:
-                    _feat_list = features if features else [
-                        "h_rms","h_kurt","h_skew","h_crest",
-                        "v_rms","v_kurt","v_skew","v_crest","temp_mean",
-                    ]
+                    _feat_list = BASE_ML_FEATURES
                     _input_arr = np.array([[_sensor_vals.get(f, 0.0) for f in _feat_list]])
                     _n_sc = ml_scaler.n_features_in_ if ml_scaler is not None else _input_arr.shape[1]
                     _X_sc = ml_scaler.transform(_input_arr[:, :_n_sc]) if ml_scaler is not None else _input_arr
@@ -944,10 +947,7 @@ with tab6:
 
             # ── DL RUL 예측 ───────────────────────────────────────────────────
             _rul_val = None
-            _feat_list2 = features if features else [
-                "h_rms","h_kurt","h_skew","h_crest",
-                "v_rms","v_kurt","v_skew","v_crest","temp_mean",
-            ]
+            _feat_list2 = BASE_ML_FEATURES
             _input_arr2 = np.array([[_sensor_vals.get(f, 0.0) for f in _feat_list2]])
             if lstm_rul is not None and seq_scaler is not None:
                 try:
