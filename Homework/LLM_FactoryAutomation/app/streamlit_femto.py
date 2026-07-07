@@ -1066,12 +1066,27 @@ with tab6:
                                 f"실행 중인지 확인하세요: {_ae}"
                             )
 
-            # ── LLM 보고서 생성 ───────────────────────────────────────────────
+            # ── LLM 보고서 생성 (동일 입력 재실행 시 재과금 방지 캐시) ────────────────
             st.divider()
             st.subheader("🤖 AI 진단 보고서")
+            # Streamlit은 페이지 내 어떤 위젯 조작에도 스크립트 전체를 재실행한다.
+            # 이 블록은 `_femto_llm_diag_generated` 플래그가 True인 동안 매 재실행마다
+            # 실행되므로, 캐시가 없으면 무관한 조작(체크박스 토글, 로컬 Ollama 버튼
+            # 클릭 등)만으로도 Claude API가 재호출되어 반복 과금된다. 센서값·임계값·
+            # ON/OFF 상태가 동일하면 캐시된 결과를 재사용해 실제 입력 변경 시에만
+            # 새로 호출한다.
+            _report_cache_key = (
+                tuple(sorted(_sensor_vals.items())),
+                round(float(ml_threshold), 4),
+                round(float(rul_threshold), 4),
+                _use_real_ai,
+            )
             try:
                 from src.femto_llm_report import generate_report, generate_report_mock
-                if _has_api_key and _use_real_ai:
+                _report_cache = st.session_state.setdefault("_femto_llm_report_cache", {})
+                if _report_cache_key in _report_cache:
+                    _report, _usage = _report_cache[_report_cache_key]
+                elif _has_api_key and _use_real_ai:
                     _report, _usage = generate_report(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
@@ -1080,17 +1095,21 @@ with tab6:
                         doc_snippets=_doc_snippets,
                         return_usage=True,
                     )
-                    if _show_ai_cost:
-                        st.caption(
-                            f"💰 입력 {_usage['input_tokens']}토큰 / 출력 {_usage['output_tokens']}토큰 "
-                            f"· 예상 비용 ${_usage['cost_usd']:.5f}"
-                        )
+                    _report_cache[_report_cache_key] = (_report, _usage)
                 else:
                     _report = generate_report_mock(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred,
                         rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
                         doc_snippets=_doc_snippets,
+                    )
+                    _usage = None
+                    _report_cache[_report_cache_key] = (_report, _usage)
+
+                if _usage and _show_ai_cost:
+                    st.caption(
+                        f"💰 입력 {_usage['input_tokens']}토큰 / 출력 {_usage['output_tokens']}토큰 "
+                        f"· 예상 비용 ${_usage['cost_usd']:.5f}"
                     )
                 st.markdown(
                     f"<div style='background:#f0f7ff;border-left:4px solid #2E75B6;"
@@ -1100,7 +1119,12 @@ with tab6:
                 )
             except Exception as _le:
                 _le_msg = str(_le)
-                if "credit balance is too low" in _le_msg:
+                # Anthropic SDK는 크레딧 부족 시 BadRequestError(status_code=400)를 던지고
+                # 본문 메시지에 "credit balance"를 포함시킨다. status_code까지 함께 확인해
+                # 우연히 같은 문구가 섞인 무관한 예외를 오진하지 않도록 한다.
+                _status_code = getattr(_le, "status_code", None)
+                _is_credit_error = _status_code == 400 and "credit balance" in _le_msg.lower()
+                if _is_credit_error:
                     st.error(
                         "보고서 생성 오류: Anthropic 계정의 크레딧 잔액이 부족합니다.\n\n"
                         "코드 버그가 아니라 결제 문제입니다 — "

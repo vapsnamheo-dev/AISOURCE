@@ -30,13 +30,14 @@ Ollama 사전 준비 (로컬 실행):
 from __future__ import annotations
 
 import argparse
+import re
 import shutil
 from pathlib import Path
 
+from langchain_core.documents import Document
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.runnables import RunnablePassthrough
-from langchain_community.document_loaders import TextLoader
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_community.llms import Ollama
 from langchain_community.vectorstores import Chroma
@@ -71,6 +72,62 @@ def _load_embeddings() -> HuggingFaceEmbeddings:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# 출처 근거(citation) — 문서를 "N. 제목" 절 단위로 파싱해 메타데이터로 부여
+# ─────────────────────────────────────────────────────────────────────────────
+_SECTION_HEADER_RE = re.compile(r"^(\d+)\.\s+(.+)$", re.MULTILINE)
+_REVISION_RE = re.compile(r"개정일:\s*(\S+)")
+
+
+def _parse_guide_sections(text: str) -> list[dict]:
+    """"N. 제목" 절 구분선(예: "3. 경고 신호 및 판정 기준")으로 문서를 절 단위로 나눈다."""
+    matches = list(_SECTION_HEADER_RE.finditer(text))
+    sections = []
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = re.sub(r"^\s*-{3,}\s*\n", "", text[start:end], count=1)
+        sections.append({
+            "section_no": m.group(1),
+            "section_title": m.group(2).strip(),
+            "content": body.strip(),
+        })
+    return sections
+
+
+def _load_guide_documents(path: Path) -> list[Document]:
+    """정비 지식 문서를 절 단위 Document로 로드한다(각 절에 출처 메타데이터 부여)."""
+    text = path.read_text(encoding="utf-8")
+    revision_match = _REVISION_RE.search(text)
+    revision_date = revision_match.group(1) if revision_match else None
+
+    return [
+        Document(
+            page_content=sec["content"],
+            metadata={
+                "source_file": path.name,
+                "section_no": sec["section_no"],
+                "section_title": sec["section_title"],
+                "revision_date": revision_date,
+            },
+        )
+        for sec in _parse_guide_sections(text)
+    ]
+
+
+def _format_citation(metadata: dict) -> str:
+    """청크 메타데이터를 "[출처: 파일명 § N.제목 (개정 YYYY-MM-DD)]" 형식으로 포맷한다."""
+    parts = [metadata.get("source_file") or "정비 지식 문서"]
+    section_no = metadata.get("section_no")
+    section_title = metadata.get("section_title")
+    if section_no and section_title:
+        parts.append(f"§ {section_no}. {section_title}")
+    revision_date = metadata.get("revision_date")
+    if revision_date:
+        parts.append(f"개정 {revision_date}")
+    return "[출처: " + " · ".join(parts) + "]"
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # 인덱스 빌드
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -89,8 +146,7 @@ def build_index(verbose: bool = True) -> Chroma:
         shutil.rmtree(PERSIST_DIRECTORY)
     PERSIST_DIRECTORY.parent.mkdir(parents=True, exist_ok=True)
 
-    loader = TextLoader(str(TEXT_FILE_PATH), encoding="utf-8")
-    documents = loader.load()
+    documents = _load_guide_documents(TEXT_FILE_PATH)
 
     if not documents or not any(d.page_content.strip() for d in documents):
         raise ValueError(f"문서 내용이 비어 있습니다: {TEXT_FILE_PATH}")
@@ -139,7 +195,7 @@ def load_index() -> Chroma:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _format_docs(docs) -> str:
-    return "\n\n".join(d.page_content for d in docs)
+    return "\n\n".join(f"{d.page_content}\n{_format_citation(d.metadata)}" for d in docs)
 
 
 def _get_retriever(vectorstore: Chroma, k: int, use_hybrid: bool):
@@ -155,13 +211,18 @@ def _get_retriever(vectorstore: Chroma, k: int, use_hybrid: bool):
         from langchain.retrievers import EnsembleRetriever
     from langchain_community.retrievers import BM25Retriever
 
-    stored = vectorstore.get(include=["documents"])
-    bm25_texts = [t for t in stored.get("documents", []) if t and t.strip()]
+    stored = vectorstore.get(include=["documents", "metadatas"])
+    bm25_texts, bm25_metadatas = [], []
+    for text, meta in zip(stored.get("documents", []), stored.get("metadatas", [])):
+        if text and text.strip():
+            bm25_texts.append(text)
+            bm25_metadatas.append(meta or {})
     if not bm25_texts:
         # 인덱스에 문서가 없으면 BM25를 구성할 수 없으므로 벡터 검색만 사용
         return vector_retriever
 
-    bm25_retriever = BM25Retriever.from_texts(bm25_texts)
+    # metadatas를 함께 넘겨 BM25 결과에도 출처(source_file/section 등)가 보존되게 한다.
+    bm25_retriever = BM25Retriever.from_texts(bm25_texts, metadatas=bm25_metadatas)
     bm25_retriever.k = k
 
     return EnsembleRetriever(
@@ -176,7 +237,11 @@ def retrieve_docs(
     vectorstore: Chroma | None = None,
     use_hybrid: bool = True,
 ) -> list[str]:
-    """질문과 관련된 정비 지식 문서 청크만 검색해 반환한다 (Ollama 불필요).
+    """질문과 관련된 정비 지식 문서 청크를 출처 근거와 함께 검색해 반환한다 (Ollama 불필요).
+
+    각 결과 문자열 끝에 "[출처: 파일명 § N.제목 (개정 YYYY-MM-DD)]" 형식의 출처 태그가
+    붙는다 — LLM 보고서(femto_llm_report.py)의 [문서 근거] 섹션과 Streamlit UI 미리보기에
+    그대로 노출되어, 어느 절의 내용을 근거로 판단했는지 추적할 수 있다.
 
     femto_llm_report.py 등 다른 LLM(Claude API 등)에 검색 결과만 컨텍스트로
     넘기고 싶을 때 사용한다. ask()와 달리 로컬 LLM 호출이 없어 가볍고,
@@ -190,7 +255,7 @@ def retrieve_docs(
 
     retriever = _get_retriever(vectorstore, k=k, use_hybrid=use_hybrid)
     docs = retriever.invoke(question)
-    return [d.page_content for d in docs]
+    return [f"{d.page_content}\n{_format_citation(d.metadata)}" for d in docs]
 
 
 def ask(
