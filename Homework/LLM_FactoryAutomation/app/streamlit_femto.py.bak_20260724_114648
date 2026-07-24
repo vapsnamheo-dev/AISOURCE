@@ -4,13 +4,6 @@ ML만 적용시(열화 분류) + LSTM RUL 예측 결합 시스템
 """
 from __future__ import annotations
 
-import os
-# TensorFlow와 PyTorch(sentence-transformers 경유)가 같은 프로세스에 로드될 때
-# 번들 OpenMP 런타임 중복 초기화로 세그폴트가 나는 것을 방지 (Streamlit Cloud에서
-# "AI 정비 권고 보고서 생성" 버튼 클릭 시 전체 크래시 발생 — 반드시 다른 import보다 먼저 설정)
-os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
-os.environ.setdefault("OMP_NUM_THREADS", "1")
-
 import json
 import pickle
 import sys
