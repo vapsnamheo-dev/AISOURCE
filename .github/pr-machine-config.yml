@@ -1,0 +1,37 @@
+# PR머신 개인 설정 — vapsnamheo-dev/AISOURCE 전체(모든 Homework/* 서브프로젝트 공통 적용)
+# hajaCheck 팀 PR머신 실측 규칙(Homework/ML_FactoryAutomation/docs/PR머신_규칙_조사.md 참고) 기반.
+# 이 파일 값만 바꾸면 워크플로우 코드 수정 없이 머지차단 기준을 조정할 수 있습니다.
+
+# 등급별 머지차단 허용 개수 — 이 개수를 "초과"하면 머지 차단(0 = 1건이라도 있으면 즉시 차단)
+merge_block_threshold:
+  P0: 0   # 치명적 이슈 — 항상 즉시 차단
+  P1: 0   # hajaCheck와 동일 — P1 잔존 시 무조건 차단
+  P2: -1  # -1 = 차단하지 않음(후속 이슈만 자동 등록, 머지는 통과)
+
+# 모델 라우팅(티어) — 파일 경로 패턴 기준
+model_routing:
+  opus:
+    - "src/**"          # 핵심 로직(모델 학습, DB, 백엔드성 코드)
+    - "**/db.py"
+    - "**/*_service.py"
+  sonnet:
+    - "app/**"           # Streamlit UI 등 단순 코드
+    - "**/*.md"
+    - "**/*.txt"
+
+# 민감 영역 — 변경 시 ai:needs-human 라벨 부여, 자동머지 차단(사람이 직접 검토)
+sensitive_paths:
+  - "**/db.py"
+  - "**/*secret*"
+  - "**/*credential*"
+  - "**/.env*"
+  - "**/config.py"
+
+# 브랜치 전략 (Option B — hajaCheck 방식과 동일)
+branch_strategy:
+  auto_merge_target: develop   # 이 브랜치를 향하는 PR만 조건 충족 시 자동 머지
+  promote_target: main         # 이 브랜치를 향하는 PR(승격)은 검수만 하고 사람이 직접 머지
+  promote_label: awaiting-promotion
+
+# 적용 범위 — 레포 전체(모노레포 내 모든 Homework/* 서브프로젝트에 공통 적용)
+scope: "*"

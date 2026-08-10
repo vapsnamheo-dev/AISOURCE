@@ -1,0 +1,151 @@
+# PR머신 (개인용) — vapsnamheo-dev/AISOURCE 전체(모노레포 내 모든 Homework/* 서브프로젝트 공통 적용)
+#
+# hajaCheck 팀 PR머신 실측 규칙(Homework/ML_FactoryAutomation/docs/PR머신_규칙_조사.md 참고)을
+# 기반으로 구현. 등급별 머지차단 개수·모델 라우팅·민감 경로는 .github/pr-machine-config.yml에서 관리한다.
+#
+# 브랜치 전략 (Option B, hajaCheck와 동일):
+#   - PR → develop : 정적/동적 체크 + Claude 리뷰 통과 시 자동 머지
+#   - develop → main (승격 PR) : 검수만 하고 자동 머지하지 않음(사람이 직접 머지)
+#
+# 보안: GitHub 토큰은 반드시 저장소 자동발급 secrets.GITHUB_TOKEN만 사용한다.
+#       여러 레포에 걸친 개인 PAT은 절대 사용하지 않는다 — 이 워크플로우는
+#       실행되는 레포(vapsnamheo-dev/AISOURCE)에만 권한이 자동으로 한정된다.
+
+name: PR머신
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+
+jobs:
+  determine-tier:
+    runs-on: ubuntu-latest
+    outputs:
+      model_id: ${{ steps.tier.outputs.model_id }}
+      is_sensitive: ${{ steps.tier.outputs.is_sensitive }}
+      is_valid_base: ${{ steps.base.outputs.is_valid }}
+      base_kind: ${{ steps.base.outputs.kind }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: base 브랜치 판정
+        id: base
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          python3 -c "
+          import yaml
+          cfg = yaml.safe_load(open('.github/pr-machine-config.yml'))
+          base = '$BASE_REF'
+          auto_merge_target = cfg['branch_strategy']['auto_merge_target']
+          promote_target = cfg['branch_strategy']['promote_target']
+          if base == auto_merge_target:
+              print('kind=auto_merge')
+          elif base == promote_target:
+              print('kind=promote')
+          else:
+              print('kind=invalid')
+          " >> "$GITHUB_OUTPUT"
+          echo "is_valid=true" >> "$GITHUB_OUTPUT"
+
+      - name: 변경 파일 기준 모델 티어(sonnet/opus) 판정
+        id: tier
+        run: |
+          pip install -q pyyaml
+          python3 -c "
+          import yaml, fnmatch, subprocess
+          cfg = yaml.safe_load(open('.github/pr-machine-config.yml'))
+          diff = subprocess.run(['git', 'diff', '--name-only', 'origin/${{ github.event.pull_request.base.ref }}...HEAD'], capture_output=True, text=True).stdout.splitlines()
+          opus_patterns = cfg['model_routing']['opus']
+          sensitive_patterns = cfg['sensitive_paths']
+          is_opus = any(fnmatch.fnmatch(f, p) for f in diff for p in opus_patterns)
+          is_sensitive = any(fnmatch.fnmatch(f, p) for f in diff for p in sensitive_patterns)
+          model_id = 'claude-opus-5' if is_opus else 'claude-sonnet-5'
+          print(f'model_id={model_id}')
+          print(f'is_sensitive={str(is_sensitive).lower()}')
+          " >> "$GITHUB_OUTPUT"
+
+  review:
+    needs: determine-tier
+    if: needs.determine-tier.outputs.base_kind != 'invalid'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: base 브랜치 확인 안내 (invalid일 때만, 위 if로 이미 걸러지지만 방어적으로 재확인)
+        if: needs.determine-tier.outputs.base_kind == 'invalid'
+        run: |
+          gh pr comment ${{ github.event.pull_request.number }} --body \
+            "🤖 **PR 머신 — base 브랜치 확인 필요** 🎯
+
+          이 PR의 base가 \`${{ github.event.pull_request.base.ref }}\`인데, PR머신은
+          \`develop\`(자동머지) 또는 \`main\`(승격 검수)을 향하는 PR만 처리합니다.
+
+          **해결**: base 브랜치를 develop 또는 main으로 변경해 주세요."
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 변경된 서브프로젝트에서 pytest 실행 (있는 경우만)
+        id: tests
+        run: |
+          set +e
+          CHANGED_DIRS=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD | xargs -n1 dirname | sort -u)
+          RESULT="pass"
+          for d in $CHANGED_DIRS; do
+            if [ -f "$d/requirements.txt" ] || ls "$d"/test_*.py >/dev/null 2>&1; then
+              (cd "$d" && pip install -q -r requirements.txt 2>/dev/null; pytest -q) || RESULT="fail"
+            fi
+          done
+          echo "result=$RESULT" >> "$GITHUB_OUTPUT"
+
+      - name: Claude 리뷰 + 라벨링 + (조건 충족 시) 자동 머지
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: ${{ needs.determine-tier.outputs.model_id }}
+          allowed_tools: "Bash(gh *),Bash(git *)"
+          prompt: |
+            너는 이 개인 레포(vapsnamheo-dev/AISOURCE)의 PR머신이다.
+            PR #${{ github.event.pull_request.number }}를 정적/동적 관점에서 리뷰하고,
+            아래 hajaCheck 팀 PR머신 실측 템플릿과 동일한 형식으로 결과를 남겨라.
+
+            테스트 실행 결과: ${{ steps.tests.outputs.result }} (fail이면 무조건 머지 차단)
+            base 브랜치 종류: ${{ needs.determine-tier.outputs.base_kind }}
+              (auto_merge = develop 타겟, 조건 충족 시 자동머지 / promote = main 타겟, 검수만 하고 자동머지 금지)
+            민감 경로 변경 여부: ${{ needs.determine-tier.outputs.is_sensitive }}
+
+            [규칙]
+            1. .github/pr-machine-config.yml의 merge_block_threshold를 읽어 P0/P1/P2 개수 기준으로 판정
+            2. P1(또는 P0) 발견 시 `gh pr edit --add-label "ai:p1-blocked"` 후 코멘트에 사유 명시
+               (예: "P1 이슈 N건 발견"), 자동머지 하지 마라
+            3. is_sensitive=true 이면 `gh pr edit --add-label "ai:needs-human"` 후 자동머지 하지 마라
+            4. base_kind=promote 이면 검수만 하고 절대 머지하지 마라. 통과 시 코멘트:
+               "🤖 **PR 머신 — 승격 PR 검수 완료** 🚀\n\n이 PR은 main을 향하는 승격(promote) PR입니다.
+               검수는 통과했지만, PR 머신은 main 자동 머지를 하지 않습니다.
+               \n\n**다음 단계**: 담당자가 내용 확인 후 직접 머지해 주세요."
+               후 `gh pr edit --add-label "awaiting-promotion"`
+            5. base_kind=auto_merge 이고 P1 없음 + is_sensitive=false + 테스트 통과이면:
+               `gh pr edit --add-label "ai:merged-by-machine"` 후 `gh pr merge --squash --auto` 실행,
+               코멘트 형식:
+               "🤖 **PR 머신 — 자동 머지 완료** ✅\n\nP1 없음 + 모든 가드 통과로 자동 머지했습니다.
+               \n\n> [변경 요약을 3~5문장 자연어로]\n\n🧪 머지 전 검증 통과: `pytest -q`"
+            6. P2 이슈는 머지를 막지 않되, 코멘트에 "### 📋 P2 개선 항목" 섹션으로
+               `[P2] 제목` + `파일:라인` + 상세설명 + "❓확인 요청(검증 전 수정 금지): ..." 형식으로 남기고,
+               동시에 `gh issue create --title "..." --body "..." --label "ai:p2-followup"`로 후속 이슈 등록
+            7. P3 이슈는 "### 참고 (P3)" 섹션에만 남기고 이슈는 만들지 마라
+            8. `git diff --name-only`로 최근 열린 다른 PR과 같은 파일을 건드리는지
+               `gh pr list --state open`로 확인해서 겹치면 "### ⚠️ 파일 겹침(시맨틱 충돌 가능 — 확인 요망)" 섹션 추가
+            9. 모든 코멘트는 `gh pr comment ${{ github.event.pull_request.number }} --body "..."`로 남겨라
