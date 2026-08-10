@@ -150,20 +150,30 @@ jobs:
             2. P1(또는 P0) 발견 시 `gh pr edit --add-label "ai:p1-blocked"` 후 코멘트에 사유 명시
                (예: "P1 이슈 N건 발견"), 자동머지 하지 마라
             3. is_sensitive=true 이면 `gh pr edit --add-label "ai:needs-human"` 후 자동머지 하지 마라
-            4. base_kind=promote 이면 검수만 하고 절대 머지하지 마라. 통과 시 코멘트:
+            4. base_kind=promote 이면 검수만 하고 절대 머지하지 마라. 라벨은 부여하지 마라
+               (hajaCheck 실측상 배치 승격 PR 자체에는 PR머신 라벨을 붙이지 않는다 — 이미
+               develop 자동머지 시점에 각 기능 PR에 awaiting-promotion이 붙어 있다). 통과 시 코멘트:
                "🤖 **PR 머신 — 승격 PR 검수 완료** 🚀\n\n이 PR은 main을 향하는 승격(promote) PR입니다.
                검수는 통과했지만, PR 머신은 main 자동 머지를 하지 않습니다.
                \n\n**다음 단계**: 담당자가 내용 확인 후 직접 머지해 주세요."
-               후 `gh pr edit --add-label "awaiting-promotion"`
             5. base_kind=auto_merge 이고 P1 없음 + is_sensitive=false + 테스트 통과이면:
-               `gh pr edit --add-label "ai:merged-by-machine"` 후 `gh pr merge --squash --auto` 실행,
-               코멘트 형식:
+               `gh pr edit --add-label "ai:merged-by-machine" --add-label "awaiting-promotion"` 후
+               `gh pr merge --squash --auto` 실행 (awaiting-promotion은 hajaCheck 실측 방식대로
+               "develop에 머지 완료·main 배치 승격 대기" 표시로, 개별 기능 PR에 붙인다 — 나중에
+               여러 PR이 쌓이면 develop→main 승격 PR 1건으로 배치 처리된다), 코멘트 형식:
                "🤖 **PR 머신 — 자동 머지 완료** ✅\n\nP1 없음 + 모든 가드 통과로 자동 머지했습니다.
                \n\n> [변경 요약을 3~5문장 자연어로]\n\n🧪 머지 전 검증 통과: `pytest -q`"
             6. P2 이슈는 머지를 막지 않되, 코멘트에 "### 📋 P2 개선 항목" 섹션으로
-               `[P2] 제목` + `파일:라인` + 상세설명 + "❓확인 요청(검증 전 수정 금지): ..." 형식으로 남기고,
-               동시에 `gh issue create --title "..." --body "..." --label "ai:p2-followup"`로 후속 이슈 등록
-            7. P3 이슈는 "### 참고 (P3)" 섹션에만 남기고 이슈는 만들지 마라
+               `[P2] 제목` + `파일:라인` + 상세설명 + "❓확인 요청(검증 전 수정 금지): ..." 형식으로 남겨라.
+               P2가 1건 이상이면 PR당 이슈 1건만(P2 항목마다 개별로 만들지 마라) hajaCheck 실측
+               형식으로 생성하라:
+               `gh issue create --title "[PR머신 후속] PR #${{ github.event.pull_request.number }} P2 개선 — <PR 제목>" --label "ai:p2-followup" --body "..."`
+               본문 형식:
+               "🤖 PR #${{ github.event.pull_request.number }} (@<작성자>) 자동 머지 시 발견된 **P2 개선 항목**입니다.
+               머지는 됐지만, 아래 항목을 추후 처리해 주세요. (P3는 선택 개선으로 함께 참고)
+               \n\n### 체크리스트 (P2)\n- [ ] **[P2] <제목>** `<파일>:<라인>`\n  - <상세설명>
+               \n\n### 참고 (P3)\n- **[P3] <제목>** `<파일:라인>`\n  - <설명>"
+            7. P3만 있고 P2가 0건이면 이슈를 만들지 말고 코멘트의 "### 참고 (P3)" 섹션에만 남겨라
             8. `git diff --name-only`로 최근 열린 다른 PR과 같은 파일을 건드리는지
                `gh pr list --state open`로 확인해서 겹치면 "### ⚠️ 파일 겹침(시맨틱 충돌 가능 — 확인 요망)" 섹션 추가
             9. 모든 코멘트는 `gh pr comment ${{ github.event.pull_request.number }} --body "..."`로 남겨라

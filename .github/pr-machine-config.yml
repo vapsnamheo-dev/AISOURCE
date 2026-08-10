@@ -31,7 +31,9 @@ sensitive_paths:
 branch_strategy:
   auto_merge_target: develop   # 이 브랜치를 향하는 PR만 조건 충족 시 자동 머지
   promote_target: main         # 이 브랜치를 향하는 PR(승격)은 검수만 하고 사람이 직접 머지
-  promote_label: awaiting-promotion
+  promote_label: awaiting-promotion   # hajaCheck 실측: 승격 PR이 아니라 develop에 자동머지되는
+                                       # 개별 기능 PR에 ai:merged-by-machine과 함께 붙는다.
+                                       # 승격은 여러 PR이 쌓인 뒤 develop→main PR 1건으로 배치 처리.
 
 # 적용 범위 — 레포 전체(모노레포 내 모든 Homework/* 서브프로젝트에 공통 적용)
 scope: "*"
