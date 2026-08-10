@@ -21,6 +21,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  id-token: write
 
 jobs:
   determine-tier:
@@ -102,21 +103,38 @@ jobs:
         id: tests
         run: |
           set +e
-          CHANGED_DIRS=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD | xargs -n1 dirname | sort -u)
+          pip install -q pytest
+          CHANGED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }}...HEAD)
           RESULT="pass"
-          for d in $CHANGED_DIRS; do
-            if [ -f "$d/requirements.txt" ] || ls "$d"/test_*.py >/dev/null 2>&1; then
-              (cd "$d" && pip install -q -r requirements.txt 2>/dev/null; pytest -q) || RESULT="fail"
+          RAN_ANY="false"
+          for f in $CHANGED_FILES; do
+            d="$f"
+            while [ "$d" != "." ] && [ -n "$d" ]; do
+              if [ -f "$d/requirements.txt" ]; then
+                pip install -q -r "$d/requirements.txt" 2>/dev/null
+              fi
+              d=$(dirname "$d")
+            done
+          done
+          TEST_DIRS=$(echo "$CHANGED_FILES" | xargs -n1 dirname | sort -u)
+          for d in $TEST_DIRS; do
+            if ls "$d"/test_*.py >/dev/null 2>&1; then
+              RAN_ANY="true"
+              (cd "$d" && pytest -q) || RESULT="fail"
             fi
           done
+          if [ "$RAN_ANY" = "false" ]; then
+            echo "(변경된 테스트 파일 없음 — pytest 스킵, pass 처리)"
+          fi
           echo "result=$RESULT" >> "$GITHUB_OUTPUT"
 
       - name: Claude 리뷰 + 라벨링 + (조건 충족 시) 자동 머지
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
-          model: ${{ needs.determine-tier.outputs.model_id }}
-          allowed_tools: "Bash(gh *),Bash(git *)"
+          claude_args: |
+            --model ${{ needs.determine-tier.outputs.model_id }}
+            --allowedTools "Bash(gh *),Bash(git *)"
           prompt: |
             너는 이 개인 레포(vapsnamheo-dev/AISOURCE)의 PR머신이다.
             PR #${{ github.event.pull_request.number }}를 정적/동적 관점에서 리뷰하고,
