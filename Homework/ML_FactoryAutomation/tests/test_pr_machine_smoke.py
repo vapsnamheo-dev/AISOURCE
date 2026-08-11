@@ -7,3 +7,8 @@ def test_pr_machine_smoke_v2():
     # 배치 승격 라벨(awaiting-promotion) + P2 이슈 묶음 방식 재검증용
     value = 1 + 1
     assert value == 2
+
+
+def test_pr_machine_smoke_v3():
+    # 2차 개선(P1 차단 코멘트 상세 형식 + 가드 5종) 반영 후 정상 자동머지 재검증용
+    assert 2 * 2 == 4
