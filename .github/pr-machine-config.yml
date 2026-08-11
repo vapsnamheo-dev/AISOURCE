@@ -26,6 +26,10 @@ sensitive_paths:
   - "**/*credential*"
   - "**/.env*"
   - "**/config.py"
+  # 의존성 파일 게이트 — hajaCheck 실측: 의존성 변경 = needs-human(운영자 수동 머지)
+  - "**/requirements.txt"
+  - "**/package.json"
+  - "**/build.gradle"
 
 # 브랜치 전략 (Option B — hajaCheck 방식과 동일)
 branch_strategy:
