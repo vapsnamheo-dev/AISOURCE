@@ -10,6 +10,10 @@ import os
 # "AI 정비 권고 보고서 생성" 버튼 클릭 시 전체 크래시 발생 — 반드시 다른 import보다 먼저 설정)
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 os.environ.setdefault("OMP_NUM_THREADS", "1")
+# HuggingFace tokenizers가 fork 후 백그라운드 스레드를 새로 여는 것도 컨테이너
+# 환경에서 별도 크래시/행 원인이 되므로 함께 비활성화한다(문서 RAG 임베딩 모델이
+# 쓰는 sentence-transformers 경유).
+os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
 import json
 import pickle
@@ -906,6 +910,17 @@ with tab6:
         value=True,
         help="AI 보고서 생성 시 사용된 토큰 수·예상 비용을 화면에 표시할지 여부",
     )
+    # 안전판 — Level-2 문서 RAG(Chroma+임베딩)는 TensorFlow가 이미 로드된 프로세스에서
+    # PyTorch 임베딩 모델을 불러오는 지점이라 이론상 가장 위험한 호출이다(위 KMP_*
+    # 주석 참고). 캐싱(femto_doc_rag._load_embeddings)으로 위험을 크게 줄였지만,
+    # 데모 중 재발 시 즉시 끌 수 있도록 토글을 남겨둔다 — 꺼도 Level-1(FAISS 유사사례)
+    # RAG와 보고서 생성 자체는 정상 동작한다.
+    _use_doc_rag = st.sidebar.checkbox(
+        "Level-2 문서 RAG 사용 (Chroma)",
+        value=True,
+        help="OFF로 끄면 정비 지식 문서 검색을 건너뛰고 ML/DL/Level-1 RAG만으로 보고서를 "
+             "생성합니다. 문서 RAG 관련 오류가 재발하면 끄고 재시도하세요.",
+    )
 
     if _has_api_key and _use_real_ai:
         st.success("✅ ANTHROPIC_API_KEY 사용: ON — 실제 AI 호출 (과금 발생)")
@@ -1007,19 +1022,22 @@ with tab6:
             # ── RAG-Level2 정비 지식 문서 검색 (Chroma) ─────────────────────────
             _doc_snippets: list[str] = []
             _doc_query: str | None = None
-            try:
-                from src.femto_doc_rag import retrieve_docs
-                _rul_txt = f"{_rul_val:.0f}분" if _rul_val is not None else "미상"
-                _doc_query = (
-                    f"열화 상태={'열화' if _pred == 1 else '정상'} "
-                    f"h_rms={_sensor_vals.get('h_rms', 0):.2f} "
-                    f"h_kurt={_sensor_vals.get('h_kurt', 0):.2f} "
-                    f"temp={_sensor_vals.get('temp_mean', 0):.1f} "
-                    f"잔여수명={_rul_txt} 상황에서 정비 권고 기준은?"
-                )
-                _doc_snippets = retrieve_docs(_doc_query, k=2)
-            except Exception as _de:
-                st.caption(f"문서 RAG 미지원 (Chroma 미설치 또는 인덱스 없음): {_de}")
+            if not _use_doc_rag:
+                st.caption("문서 RAG 비활성화됨 (사이드바 'Level-2 문서 RAG 사용' OFF)")
+            else:
+                try:
+                    from src.femto_doc_rag import retrieve_docs
+                    _rul_txt = f"{_rul_val:.0f}분" if _rul_val is not None else "미상"
+                    _doc_query = (
+                        f"열화 상태={'열화' if _pred == 1 else '정상'} "
+                        f"h_rms={_sensor_vals.get('h_rms', 0):.2f} "
+                        f"h_kurt={_sensor_vals.get('h_kurt', 0):.2f} "
+                        f"temp={_sensor_vals.get('temp_mean', 0):.1f} "
+                        f"잔여수명={_rul_txt} 상황에서 정비 권고 기준은?"
+                    )
+                    _doc_snippets = retrieve_docs(_doc_query, k=2)
+                except Exception as _de:
+                    st.caption(f"문서 RAG 미지원 (Chroma 미설치 또는 인덱스 없음): {_de}")
 
             # ── 중간 결과 표시 ────────────────────────────────────────────────
             _c1, _c2, _c3, _c4 = st.columns(4)
