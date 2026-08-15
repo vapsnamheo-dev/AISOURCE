@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import re
 import shutil
+from functools import lru_cache
 from pathlib import Path
 
 from langchain_core.documents import Document
@@ -67,7 +68,13 @@ RAG_PROMPT = ChatPromptTemplate.from_template(
 )
 
 
+@lru_cache(maxsize=1)
 def _load_embeddings() -> HuggingFaceEmbeddings:
+    # 캐시 없이 매 호출 재생성하면(구버전 동작) Streamlit 세션에서 버튼을 누를
+    # 때마다 PyTorch(sentence-transformers) 임베딩 모델을 새로 로드하게 되어,
+    # 이미 TensorFlow가 로드된 프로세스에서 OpenMP 런타임 중복 초기화 크래시
+    # (streamlit_femto.py 상단 KMP_DUPLICATE_LIB_OK 주석 참고)가 매번 재발할
+    # 위험을 반복 노출시킨다. 프로세스당 1회만 로드해 그 노출을 최소화한다.
     return HuggingFaceEmbeddings(model_name=EMBEDDING_MODEL_NAME)
 
 
@@ -180,8 +187,14 @@ def build_index(verbose: bool = True) -> Chroma:
 # 인덱스 로드
 # ─────────────────────────────────────────────────────────────────────────────
 
+@lru_cache(maxsize=1)
 def load_index() -> Chroma:
-    """저장된 Chroma 벡터 DB를 로드한다. 없으면 새로 빌드한다."""
+    """저장된 Chroma 벡터 DB를 로드한다. 없으면 새로 빌드한다.
+
+    프로세스당 1회만 디스크에서 로드하도록 캐시한다(_load_embeddings와 동일한 이유
+    — Streamlit 세션에서 재실행마다 다시 열 필요가 없고, 인덱스는 세션 도중
+    바뀌지 않는다). CLI에서 인덱스를 강제로 다시 만들려면 build_index()를 직접
+    호출하거나 새 프로세스로 실행할 것 — 이 캐시는 프로세스 생존 기간 동안만 유효하다."""
     if not PERSIST_DIRECTORY.exists():
         return build_index(verbose=True)
     return Chroma(
