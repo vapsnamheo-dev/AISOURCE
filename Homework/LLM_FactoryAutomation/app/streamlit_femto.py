@@ -1105,14 +1105,19 @@ with tab6:
                 round(float(ml_threshold), 4),
                 round(float(rul_threshold), 4),
                 _use_real_ai,
+                _use_doc_rag,
             )
             try:
-                from src.femto_llm_report import generate_report, generate_report_mock
+                # 3층 환각 방어 게이트(femto_llm_guard.py)를 통과한 경로로 전환 — 이전엔
+                # femto_llm_report.generate_report()를 직접 불러 가드를 우회하고 있었다.
+                # 가드는 dict(status/anomalies/action/similar_case_note/doc_basis)를
+                # 반환하므로 아래 렌더링도 자유 텍스트 대신 구조화 표시로 바꾼다.
+                from src.femto_llm_guard import generate_report_guarded, generate_report_guarded_mock
                 _report_cache = st.session_state.setdefault("_femto_llm_report_cache", {})
                 if _report_cache_key in _report_cache:
                     _report, _usage = _report_cache[_report_cache_key]
                 elif _has_api_key and _use_real_ai:
-                    _report, _usage = generate_report(
+                    _report, _usage = generate_report_guarded(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
                         rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
@@ -1122,10 +1127,11 @@ with tab6:
                     )
                     _report_cache[_report_cache_key] = (_report, _usage)
                 else:
-                    _report = generate_report_mock(
+                    _report = generate_report_guarded_mock(
                         sensor=_sensor_vals,
-                        ml_prob=_proba, ml_label=_pred,
+                        ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
                         rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
+                        rag_cases=_rag_cases,
                         doc_snippets=_doc_snippets,
                     )
                     _usage = None
@@ -1136,10 +1142,27 @@ with tab6:
                         f"💰 입력 {_usage['input_tokens']}토큰 / 출력 {_usage['output_tokens']}토큰 "
                         f"· 예상 비용 ${_usage['cost_usd']:.5f}"
                     )
+
+                _status_colors = {
+                    "정상": "#1E7B34", "주의": "#B8860B", "위험": "#C00000", "판단불가": "#6c757d",
+                }
+                _status = _report.get("status", "판단불가")
+                _color = _status_colors.get(_status, "#2E75B6")
+                _anomalies = _report.get("anomalies") or []
+                _anomalies_html = "".join(f"<li>{a}</li>" for a in _anomalies) or "<li>해당 없음</li>"
+                _action = _report.get("action") or {}
                 st.markdown(
-                    f"<div style='background:#f0f7ff;border-left:4px solid #2E75B6;"
-                    f"padding:16px;border-radius:4px;white-space:pre-wrap;font-size:14px'>"
-                    f"{_report}</div>",
+                    f"<div style='background:#f0f7ff;border-left:4px solid {_color};"
+                    f"padding:16px;border-radius:4px;font-size:14px'>"
+                    f"<span style='background:{_color};color:white;padding:2px 10px;"
+                    f"border-radius:12px;font-weight:600'>{_status}</span>"
+                    f"<p style='margin-top:12px;margin-bottom:4px'><b>주요 이상 신호</b></p>"
+                    f"<ul style='margin-top:0'>{_anomalies_html}</ul>"
+                    f"<p><b>정비 권고</b> ({_action.get('urgency', '-')})<br>"
+                    f"{_action.get('description', '-')}</p>"
+                    f"<p><b>유사 사례 참고</b><br>{_report.get('similar_case_note', '-')}</p>"
+                    f"<p style='margin-bottom:0'><b>문서 근거</b><br>{_report.get('doc_basis', '-')}</p>"
+                    f"</div>",
                     unsafe_allow_html=True,
                 )
             except Exception as _le:
