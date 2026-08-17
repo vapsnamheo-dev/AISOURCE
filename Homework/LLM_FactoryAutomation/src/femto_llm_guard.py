@@ -50,6 +50,40 @@ SENSOR_PHYSICAL_RANGE: dict[str, tuple[float, float]] = {
 KNOWN_STATUS_CLASSES = ["정상", "주의", "위험", "판단불가"]
 
 
+# ── 종합 판정 — ML/DL/RAG 신호를 규칙으로 미리 합쳐 LLM에 앵커로 제공 ────────────
+def combined_verdict(
+    ml_label: int,
+    rul_min: float | None,
+    rul_alarm_min: float,
+    rul_reliable: bool,
+) -> tuple[str, str]:
+    """ML 분류 + (신뢰 가능한 경우만) DL RUL을 규칙 기반으로 하나의 판정으로 합친다.
+
+    화면에 "ML=정상"과 "RUL=긴급"이 동시에 떠서 결론 없이 사용자를 혼란스럽게
+    하는 문제를 풀기 위한 것 — LLM에게 최종 결론을 맡기지 않고 코드가 결정론적으로
+    정하며, 그 결과를 LLM에게 "이 판정과 일치하는 status로 답하라"는 앵커로 준다.
+    RUL이 신뢰 불가(rul_reliable=False, 예: 단일 스냅샷 반복 입력)면 RUL은 판정에서
+    제외하고 ML 결과만 사용한다 — 신뢰할 수 없는 신호를 종합에 섞으면 종합 결과 자체가
+    오염되기 때문이다.
+
+    Returns
+    -------
+    (verdict, reason) : verdict는 KNOWN_STATUS_CLASSES 중 하나("판단불가" 제외 3종),
+                         reason은 그 판정에 이른 근거를 사람이 읽을 문장으로 설명.
+    """
+    rul_urgent = rul_reliable and rul_min is not None and rul_min <= rul_alarm_min
+
+    if ml_label == 1 and rul_urgent:
+        return "위험", "ML 열화 감지와 DL 잔여수명(RUL) 임계 이하가 서로 일치 — 두 모델이 같은 결론"
+    if ml_label == 1:
+        rul_note = "RUL은 신뢰 불가(저신뢰)로 판정에서 제외" if not rul_reliable else "RUL은 양호"
+        return "주의", f"ML 열화 감지({rul_note})"
+    if rul_urgent:
+        return "주의", "ML은 정상이나 DL 잔여수명(RUL)이 긴급 기준 이하 — 두 신호가 불일치, 재측정 권고"
+    rul_note = "(RUL은 저신뢰로 판정 제외)" if not rul_reliable else ""
+    return "정상", f"ML 정상{rul_note}"
+
+
 def _with_unknown_status(schema: dict[str, Any]) -> dict[str, Any]:
     guarded = copy.deepcopy(schema)
     guarded["properties"]["status"]["enum"] = KNOWN_STATUS_CLASSES
@@ -161,6 +195,7 @@ def generate_report_guarded(
     max_tokens: int = 600,
     max_retries: int = 1,
     return_usage: bool = False,
+    combined_verdict: str | None = None,
 ) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """환각 방어 3층 게이트를 적용한 LLM 진단 (Structured Output).
 
@@ -169,6 +204,12 @@ def generate_report_guarded(
     3) 클래스 한정성 자기인지(3층): 근거 불충분 시 "판단불가" 강제.
     4) 근거 구조 감사: 스키마 위반 시 max_retries회 재시도, 그래도 실패하면
        추측 대신 "판단불가" 폴백을 반환한다.
+
+    combined_verdict: 호출부(streamlit_femto.py)가 combined_verdict()로 미리 계산한
+    ML+DL 종합 판정("정상"/"주의"/"위험"). 주어지면 컨텍스트에 앵커로 추가해 LLM의
+    status 필드가 화면 상단 종합 판정 배지와 다른 결론을 내지 않도록 강제한다
+    (LLM에게 종합 판단 자체를 맡기지 않고, 코드가 이미 정한 값을 따르게 함 — 3층
+    클래스 한정성과 같은 원리, "판단불가"만 예외로 이 앵커보다 우선한다).
 
     return_usage=True면 (결과, usage딕셔너리) 튜플을 반환한다. usage는 재시도로
     발생한 모든 API 호출의 토큰을 합산한 값이다(입력 게이트 차단으로 API를
@@ -194,6 +235,13 @@ def generate_report_guarded(
         doc_snippets=doc_snippets,
     )
     context += f"\n\n[서술 톤 지시]\n{_tone_instruction(tone)}"
+    if combined_verdict:
+        context += (
+            f"\n\n[종합 판정 — status는 반드시 이 값과 일치시키세요]\n"
+            f"ML·DL 신호를 규칙 기반으로 미리 종합한 결과는 \"{combined_verdict}\"입니다. "
+            f"근거가 명백히 부족해 3층 규칙상 \"판단불가\"를 써야 하는 경우가 아니라면, "
+            f"status를 반드시 \"{combined_verdict}\"로 답하세요."
+        )
 
     system_prompt = STRUCTURED_SYSTEM_PROMPT + GUARDED_SYSTEM_PROMPT_SUFFIX
     client = _get_client()
@@ -237,11 +285,16 @@ def generate_report_guarded_mock(
     rul_alarm_min: float = 60.0,
     rag_cases: list[dict[str, Any]] | None = None,
     doc_snippets: list[str] | None = None,
+    combined_verdict: str | None = None,
 ) -> dict[str, Any]:
     """API 키 없이 게이트 로직만 검증하는 Mock (데모·테스트용).
 
     실제 LLM 호출 없이 1층·2층·3층 게이트 로직을 그대로 통과시켜, 근거가
     부족할 때 "판단불가"를 반환하는 흐름을 확인할 수 있다.
+
+    combined_verdict가 주어지면(generate_report_guarded()와 동일 계약) "판단불가"로
+    빠지는 경우를 제외하고 status를 그 값으로 덮어써, Mock 모드에서도 화면 상단
+    종합 판정 배지와 보고서 본문이 다른 결론을 내지 않게 한다.
     """
     passed, reason = check_input_gate(sensor)
     if not passed:
@@ -269,4 +322,6 @@ def generate_report_guarded_mock(
     )
     if tone == "hedged":
         result["action"]["description"] += " (확인 권장 — 임계값 인근 애매 구간)"
+    if combined_verdict and result["status"] != "판단불가":
+        result["status"] = combined_verdict
     return result
