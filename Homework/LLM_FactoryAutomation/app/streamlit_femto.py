@@ -986,6 +986,14 @@ with tab6:
 
             # ── DL RUL 예측 ───────────────────────────────────────────────────
             _rul_val = None
+            # LSTM 경로는 슬라이더 스냅샷 1개를 30회 복제해 시퀀스처럼 흉내낸다(np.tile
+            # 아래) — 그런데 femto_dl_rul.make_sequences()의 실제 학습 데이터는 30분간
+            # "실제로 변화하는" 연속 시계열이라, 이 반복 입력은 학습 중 한 번도 본 적
+            # 없는 형태(분포 밖 입력)다. RF 경로는 반대로 train_rf_baseline()이
+            # `X[:, -1, :]`(윈도우 마지막 타임스텝, 즉 스냅샷 1개)로 학습되므로 지금과
+            # 동일한 단일 스냅샷 입력이 정상 사용법이다 — 저신뢰 플래그는 LSTM 경로에만
+            # 붙인다.
+            _rul_low_confidence = False
             _feat_list2 = BASE_ML_FEATURES
             _input_arr2 = np.array([[_sensor_vals.get(f, 0.0) for f in _feat_list2]])
             if lstm_rul is not None and seq_scaler is not None:
@@ -996,6 +1004,7 @@ with tab6:
                     _rul_val = max(0.0, float(
                         y_scaler.inverse_transform([[_r]])[0][0] if y_scaler else _r
                     ))
+                    _rul_low_confidence = True
                 except Exception:
                     pass
             if _rul_val is None and rf_rul is not None and seq_scaler is not None:
@@ -1007,6 +1016,29 @@ with tab6:
                     ))
                 except Exception:
                     pass
+            # LLM·문서RAG 질의에는 저신뢰 RUL을 사실처럼 넘기지 않는다 — 화면에는
+            # 원값을 그대로 보여주되(투명성), 근거로 인용될 수 있는 곳에는 "미상"으로
+            # 취급해 보고서 문장이 노이즈를 확정적 사실처럼 서술하지 않게 한다.
+            _rul_for_llm = None if _rul_low_confidence else _rul_val
+
+            # ── 종합 판정 — ML+DL(신뢰 가능할 때만)을 규칙으로 미리 합쳐 단일 결론으로
+            # 표시한다. "ML=정상"과 "RUL=긴급"이 결론 없이 동시에 떠서 혼란을 주는
+            # 문제를 풀기 위한 것 — 이 값을 아래 LLM 호출에도 앵커로 넘겨, 보고서
+            # 문장이 여기서 낸 결론과 다른 말을 하지 않게 한다.
+            from src.femto_llm_guard import combined_verdict as _combined_verdict_fn
+            _verdict, _verdict_reason = _combined_verdict_fn(
+                ml_label=_pred, rul_min=_rul_val,
+                rul_alarm_min=float(rul_threshold), rul_reliable=not _rul_low_confidence,
+            )
+            _verdict_colors = {"정상": "#1E7B34", "주의": "#B8860B", "위험": "#C00000"}
+            st.markdown(
+                f"<div style='padding:10px 16px;border-radius:6px;background:"
+                f"{_verdict_colors.get(_verdict, '#2E75B6')}1A;border-left:4px solid "
+                f"{_verdict_colors.get(_verdict, '#2E75B6')};margin-bottom:8px'>"
+                f"<b>종합 판정: <span style='color:{_verdict_colors.get(_verdict, '#2E75B6')}'>"
+                f"{_verdict}</span></b> — {_verdict_reason}</div>",
+                unsafe_allow_html=True,
+            )
 
             # ── RAG 유사 사례 검색 ────────────────────────────────────────────
             _rag_cases = []
@@ -1027,7 +1059,7 @@ with tab6:
             else:
                 try:
                     from src.femto_doc_rag import retrieve_docs
-                    _rul_txt = f"{_rul_val:.0f}분" if _rul_val is not None else "미상"
+                    _rul_txt = f"{_rul_for_llm:.0f}분" if _rul_for_llm is not None else "미상"
                     _doc_query = (
                         f"열화 상태={'열화' if _pred == 1 else '정상'} "
                         f"h_rms={_sensor_vals.get('h_rms', 0):.2f} "
@@ -1050,7 +1082,9 @@ with tab6:
             with _c2:
                 if _rul_val is not None:
                     st.metric("예측 잔여수명", f"{_rul_val:.0f} 분")
-                    if _rul_val <= rul_threshold:
+                    if _rul_low_confidence:
+                        st.warning("추정 신뢰도 낮음 — 단일 스냅샷 반복 입력(추세 데이터 아님)")
+                    elif _rul_val <= rul_threshold:
                         st.error(f"긴급 ({rul_threshold}분 이하)")
                     else:
                         st.success("양호")
@@ -1120,19 +1154,21 @@ with tab6:
                     _report, _usage = generate_report_guarded(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
-                        rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
+                        rul_min=_rul_for_llm, rul_alarm_min=float(rul_threshold),
                         rag_cases=_rag_cases,
                         doc_snippets=_doc_snippets,
                         return_usage=True,
+                        combined_verdict=_verdict,
                     )
                     _report_cache[_report_cache_key] = (_report, _usage)
                 else:
                     _report = generate_report_guarded_mock(
                         sensor=_sensor_vals,
                         ml_prob=_proba, ml_label=_pred, ml_threshold=ml_threshold,
-                        rul_min=_rul_val, rul_alarm_min=float(rul_threshold),
+                        rul_min=_rul_for_llm, rul_alarm_min=float(rul_threshold),
                         rag_cases=_rag_cases,
                         doc_snippets=_doc_snippets,
+                        combined_verdict=_verdict,
                     )
                     _usage = None
                     _report_cache[_report_cache_key] = (_report, _usage)
