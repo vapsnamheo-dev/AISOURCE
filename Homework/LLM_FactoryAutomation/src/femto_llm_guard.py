@@ -29,6 +29,7 @@ from src.femto_llm_report import (
     STRUCTURED_REPORT_SCHEMA,
     STRUCTURED_SYSTEM_PROMPT,
     _build_context,
+    _estimate_cost_usd,
     _get_client,
     generate_report_structured_mock,
 )
@@ -159,7 +160,8 @@ def generate_report_guarded(
     model: str = "claude-haiku-4-5-20251001",
     max_tokens: int = 600,
     max_retries: int = 1,
-) -> dict[str, Any]:
+    return_usage: bool = False,
+) -> dict[str, Any] | tuple[dict[str, Any], dict[str, Any]]:
     """환각 방어 3층 게이트를 적용한 LLM 진단 (Structured Output).
 
     1) 입력 게이트(2층): 센서값이 OOD면 LLM 호출 없이 차단.
@@ -167,10 +169,23 @@ def generate_report_guarded(
     3) 클래스 한정성 자기인지(3층): 근거 불충분 시 "판단불가" 강제.
     4) 근거 구조 감사: 스키마 위반 시 max_retries회 재시도, 그래도 실패하면
        추측 대신 "판단불가" 폴백을 반환한다.
+
+    return_usage=True면 (결과, usage딕셔너리) 튜플을 반환한다. usage는 재시도로
+    발생한 모든 API 호출의 토큰을 합산한 값이다(입력 게이트 차단으로 API를
+    아예 안 부른 경우는 0으로 채운다) — generate_report()의 return_usage 계약과
+    동일한 형태로 맞춰 Streamlit 쪽 비용 캡션을 그대로 재사용할 수 있게 한다.
     """
+    def _usage_dict(input_tokens: int, output_tokens: int) -> dict[str, Any]:
+        return {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cost_usd": _estimate_cost_usd(input_tokens, output_tokens),
+        }
+
     passed, reason = check_input_gate(sensor)
     if not passed:
-        return _blocked_result(reason)
+        blocked = _blocked_result(reason)
+        return (blocked, _usage_dict(0, 0)) if return_usage else blocked
 
     tone = confidence_tone(ml_prob, ml_threshold)
     context = _build_context(
@@ -184,12 +199,16 @@ def generate_report_guarded(
     client = _get_client()
 
     last_error = "알 수 없는 오류"
+    total_input_tokens = 0
+    total_output_tokens = 0
     for _attempt in range(max_retries + 1):
         response = client.messages.create(
             model=model, max_tokens=max_tokens, system=system_prompt,
             messages=[{"role": "user", "content": context}],
             output_config={"format": {"type": "json_schema", "schema": GUARDED_REPORT_SCHEMA}},
         )
+        total_input_tokens += response.usage.input_tokens
+        total_output_tokens += response.usage.output_tokens
         text = next(b.text for b in response.content if b.type == "text")
         try:
             result = json.loads(text)
@@ -200,12 +219,13 @@ def generate_report_guarded(
 
         ok, err = _validate_guarded_result(result)
         if ok:
-            return result
+            return (result, _usage_dict(total_input_tokens, total_output_tokens)) if return_usage else result
         last_error = err
         context += f"\n\n[재시도 지시] 이전 응답이 스키마를 위반했습니다: {err}. 다시 스키마에 맞게 답하세요."
 
     logger.warning("구조화 검증 %d회 실패 — 판단불가로 폴백: %s", max_retries + 1, last_error)
-    return _fallback_result(last_error)
+    fallback = _fallback_result(last_error)
+    return (fallback, _usage_dict(total_input_tokens, total_output_tokens)) if return_usage else fallback
 
 
 def generate_report_guarded_mock(
